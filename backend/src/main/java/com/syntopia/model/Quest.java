@@ -1,7 +1,7 @@
 package com.syntopia.model;
 
 import com.arangodb.springframework.annotation.Document;
-import com.arangodb.springframework.annotation.Key;
+// import com.arangodb.springframework.annotation.Key;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import org.springframework.data.annotation.Id;
 

@@ -139,6 +139,13 @@ public class UserService implements UserDetailsService {
         return userRepository.findByCurrentLevelGreaterThanEqual(4);
     }
 
+    /**
+     * Save user
+     */
+    public User save(User user) {
+        return userRepository.save(user);
+    }
+
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         User user = userRepository.findByUsername(username)
@@ -146,7 +153,7 @@ public class UserService implements UserDetailsService {
         
         return org.springframework.security.core.userdetails.User.builder()
                 .username(user.getUsername())
-                .password("") // OAuth users don't have passwords
+                .password(user.getPasswordHash() != null ? user.getPasswordHash() : "") // Support both OAuth and password auth
                 .authorities("ROLE_USER")
                 .accountExpired(false)
                 .accountLocked(!user.isEnabled())

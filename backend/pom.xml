@@ -21,8 +21,8 @@
     <properties>
         <java.version>21</java.version>
         <spring-cloud.version>2023.0.3</spring-cloud.version>
-        <arangodb.version>7.8.0</arangodb.version>
-        <arangodb-spring-data.version>4.6.0</arangodb-spring-data.version>
+        <arangodb.version>7.5.0</arangodb.version>
+        <arangodb-spring-data.version>4.5.3</arangodb-spring-data.version>
         <jwt.version>0.12.6</jwt.version>
     </properties>
 
@@ -55,11 +55,14 @@
             <artifactId>arangodb-java-driver</artifactId>
             <version>${arangodb.version}</version>
         </dependency>
+        <!-- Temporarily remove Spring Data ArangoDB until we find working version -->
+        <!--
         <dependency>
             <groupId>com.arangodb</groupId>
             <artifactId>arangodb-spring-data</artifactId>
             <version>${arangodb-spring-data.version}</version>
         </dependency>
+        -->
 
         <!-- JWT Dependencies -->
         <dependency>
@@ -119,11 +122,15 @@
             <artifactId>testcontainers</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Temporarily remove ArangoDB testcontainer -->
+        <!--
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>arangodb</artifactId>
+            <version>1.19.0</version>
             <scope>test</scope>
         </dependency>
+        -->
     </dependencies>
 
     <dependencyManagement>
