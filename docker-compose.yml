@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # ArangoDB Database
+  arangodb:
+    build: ./database/arangodb
+    container_name: syntopia-arangodb
+    ports:
+      - "8529:8529"
+    environment:
+      ARANGO_ROOT_PASSWORD: syntopia123
+      ARANGO_DATABASE: syntopia
+    volumes:
+      - arangodb_data:/var/lib/arangodb3
+      - arangodb_apps:/var/lib/arangodb3-apps
+    networks:
+      - syntopia-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8529/_api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Backend Service
+  backend:
+    build: ./backend
+    container_name: syntopia-backend
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      ARANGODB_HOST: arangodb
+      ARANGODB_PORT: 8529
+      ARANGODB_DATABASE: syntopia
+      ARANGODB_USERNAME: root
+      ARANGODB_PASSWORD: syntopia123
+      JWT_SECRET: syntopia-jwt-secret-key-for-docker
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-your-github-client-id}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-your-github-client-secret}
+    depends_on:
+      arangodb:
+        condition: service_healthy
+    networks:
+      - syntopia-network
+    volumes:
+      - backend_logs:/logs
+
+  # Frontend Service
+  frontend:
+    build: ./frontend
+    container_name: syntopia-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8080/api
+      VITE_P5_CDN: https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js
+    depends_on:
+      - backend
+    networks:
+      - syntopia-network
+
+networks:
+  syntopia-network:
+    driver: bridge
+
+volumes:
+  arangodb_data:
+  arangodb_apps:
+  backend_logs:

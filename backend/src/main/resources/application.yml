@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: syntopia-backend
+  
+  # Server Configuration
+  server:
+    port: 8080
+    servlet:
+      context-path: /api
+
+  # Security Configuration
+  security:
+    oauth2:
+      client:
+        registration:
+          github:
+            client-id: ${GITHUB_CLIENT_ID:your-github-client-id}
+            client-secret: ${GITHUB_CLIENT_SECRET:your-github-client-secret}
+            scope: read:user,user:email
+        provider:
+          github:
+            user-info-uri: https://api.github.com/user
+
+# ArangoDB Configuration
+arangodb:
+  host: ${ARANGODB_HOST:localhost}
+  port: ${ARANGODB_PORT:8529}
+  database: ${ARANGODB_DATABASE:syntopia}
+  username: ${ARANGODB_USERNAME:root}
+  password: ${ARANGODB_PASSWORD:syntopia123}
+  timeout: 30000
+  useSsl: false
+
+# JWT Configuration
+jwt:
+  secret: ${JWT_SECRET:syntopia-jwt-secret-key-change-in-production}
+  expiration: 86400000 # 24 hours in milliseconds
+  refresh-expiration: 604800000 # 7 days in milliseconds
+
+# CORS Configuration
+cors:
+  allowed-origins: 
+    - http://localhost:5173
+    - http://localhost:3000
+  allowed-methods:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    - OPTIONS
+  allowed-headers:
+    - "*"
+  allow-credentials: true
+
+# Logging Configuration
+logging:
+  level:
+    com.syntopia: DEBUG
+    org.springframework.security: DEBUG
+    com.arangodb: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# Management & Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
