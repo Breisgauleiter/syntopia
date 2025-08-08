@@ -31,6 +31,11 @@ public interface QuestRepository extends ArangoRepository<Quest, String> {
     List<Quest> findByStatus(Quest.QuestStatus status);
 
     /**
+     * Find available quests by level and status (for users without selected role)
+     */
+    List<Quest> findByRequiredLevelLessThanEqualAndStatus(int userLevel, Quest.QuestStatus status);
+
+    /**
      * Find quests by type
      */
     List<Quest> findByType(Quest.QuestType type);
@@ -55,4 +60,19 @@ public interface QuestRepository extends ArangoRepository<Quest, String> {
      * Find quests containing specific geometry patterns
      */
     List<Quest> findByGeometryPatternsContaining(String pattern);
+
+    /**
+     * Count quests by status
+     */
+    long countByStatus(Quest.QuestStatus status);
+
+    /**
+     * Count quests by type
+     */
+    long countByType(Quest.QuestType type);
+
+    /**
+     * Count quests by difficulty
+     */
+    long countByDifficulty(Quest.QuestDifficulty difficulty);
 }
