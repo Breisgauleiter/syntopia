@@ -211,22 +211,22 @@ const syntopiaRoles = [
       <div class="container">
         <div class="stats-grid">
           <div class="stat-card glass">
-            <div class="stat-number">{{ userStore.user?.currentLevel }}</div>
+            <div class="stat-number">{{ userStore.user?.currentLevel || 1 }}</div>
             <div class="stat-label">Your Level</div>
           </div>
           
           <div class="stat-card glass">
-            <div class="stat-number">{{ userStore.user?.experiencePoints.toLocaleString() }}</div>
+            <div class="stat-number">{{ (userStore.user?.experiencePoints || 0).toLocaleString() }}</div>
             <div class="stat-label">Experience Points</div>
           </div>
           
           <div class="stat-card glass">
-            <div class="stat-number">{{ userStore.user?.questsCompleted }}</div>
+            <div class="stat-number">{{ userStore.user?.questsCompleted || 0 }}</div>
             <div class="stat-label">Quests Completed</div>
           </div>
           
           <div class="stat-card glass">
-            <div class="stat-number">{{ userStore.userRole }}</div>
+            <div class="stat-number">{{ userStore.userRole || 'None' }}</div>
             <div class="stat-label">Sacred Role</div>
           </div>
         </div>

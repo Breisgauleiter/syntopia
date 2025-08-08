@@ -56,7 +56,8 @@ const password = ref('')
 
 const handleLogin = async () => {
   try {
-    await userStore.login(email.value, password.value)
+    // Send email in the email field, not as username
+    await userStore.login({ email: email.value, password: password.value })
     router.push('/')
   } catch (error) {
     console.error('Login failed:', error)

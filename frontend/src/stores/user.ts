@@ -55,7 +55,7 @@ export const useUserStore = defineStore('user', () => {
     delete axios.defaults.headers.common['Authorization']
   }
 
-  const login = async (credentials: { username: string; password: string }) => {
+  const login = async (credentials: { username?: string; email?: string; password: string }) => {
     isLoading.value = true
     error.value = null
     
@@ -69,6 +69,16 @@ export const useUserStore = defineStore('user', () => {
     } finally {
       isLoading.value = false
     }
+  }
+
+  // Convenience method for username login
+  const loginWithUsername = async (username: string, password: string) => {
+    return login({ username, password })
+  }
+
+  // Convenience method for email login  
+  const loginWithEmail = async (email: string, password: string) => {
+    return login({ email, password })
   }
 
   const loginWithGitHub = async (code: string) => {
@@ -171,6 +181,8 @@ export const useUserStore = defineStore('user', () => {
     
     // Actions
     login,
+    loginWithUsername,
+    loginWithEmail,
     loginWithGitHub,
     register,
     logout,

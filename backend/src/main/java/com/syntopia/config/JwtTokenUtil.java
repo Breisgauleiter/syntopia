@@ -75,6 +75,11 @@ public class JwtTokenUtil {
         return createToken(claims, userDetails.getUsername(), refreshExpiration);
     }
 
+    public String generateRefreshToken(String username) {
+        Map<String, Object> claims = new HashMap<>();
+        return createToken(claims, username, refreshExpiration);
+    }
+
     private String createToken(Map<String, Object> claims, String subject, Long expiration) {
         return Jwts.builder()
                 .claims(claims)

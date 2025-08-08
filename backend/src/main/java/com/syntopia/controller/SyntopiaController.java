@@ -13,7 +13,7 @@ import java.util.Map;
  * Provides basic endpoints for health checks and platform information.
  */
 @RestController
-@RequestMapping("/")
+@RequestMapping("/api")
 @CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"})
 public class SyntopiaController {
 

@@ -1,7 +1,7 @@
 package com.syntopia.model;
 
 import com.arangodb.springframework.annotation.Document;
-// import com.arangodb.springframework.annotation.Key;
+import com.arangodb.springframework.annotation.Field;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import org.springframework.data.annotation.Id;
 
@@ -21,7 +21,7 @@ public class Quest {
     @Id
     private String id;
 
-    @Key
+    @Field("_key")
     private String key;
 
     private String title;

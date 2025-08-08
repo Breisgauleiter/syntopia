@@ -14,13 +14,13 @@ db._create("users");
 db.users.ensureIndex({ type: "hash", fields: ["username"], unique: true });
 db.users.ensureIndex({ type: "hash", fields: ["email"], unique: true });
 db.users.ensureIndex({ type: "hash", fields: ["githubId"], unique: true, sparse: true });
-db.users.ensureIndex({ type: "skiplist", fields: ["currentLevel"] });
-db.users.ensureIndex({ type: "skiplist", fields: ["experiencePoints"] });
+db.users.ensureIndex({ type: "persistent", fields: ["currentLevel"] });
+db.users.ensureIndex({ type: "persistent", fields: ["experiencePoints"] });
 
 // Quests collection
 db._create("quests");
 db.quests.ensureIndex({ type: "hash", fields: ["role"] });
-db.quests.ensureIndex({ type: "skiplist", fields: ["requiredLevel"] });
+db.quests.ensureIndex({ type: "persistent", fields: ["requiredLevel"] });
 db.quests.ensureIndex({ type: "hash", fields: ["status"] });
 db.quests.ensureIndex({ type: "hash", fields: ["type"] });
 db.quests.ensureIndex({ type: "hash", fields: ["githubRepository"], sparse: true });
@@ -29,7 +29,7 @@ db.quests.ensureIndex({ type: "hash", fields: ["githubRepository"], sparse: true
 db._create("geometry_patterns");
 db.geometry_patterns.ensureIndex({ type: "hash", fields: ["name"], unique: true });
 db.geometry_patterns.ensureIndex({ type: "hash", fields: ["category"] });
-db.geometry_patterns.ensureIndex({ type: "skiplist", fields: ["complexity"] });
+db.geometry_patterns.ensureIndex({ type: "persistent", fields: ["complexity"] });
 
 // Community Projects collection
 db._create("projects");
@@ -44,8 +44,8 @@ db.projects.ensureIndex({ type: "hash", fields: ["githubRepository"], sparse: tr
 // User-Quest associations (user accepts/completes quests)
 db._createEdgeCollection("user_quests");
 db.user_quests.ensureIndex({ type: "hash", fields: ["status"] }); // ACCEPTED, COMPLETED, ABANDONED
-db.user_quests.ensureIndex({ type: "skiplist", fields: ["acceptedAt"] });
-db.user_quests.ensureIndex({ type: "skiplist", fields: ["completedAt"] });
+db.user_quests.ensureIndex({ type: "persistent", fields: ["acceptedAt"] });
+db.user_quests.ensureIndex({ type: "persistent", fields: ["completedAt"] });
 
 // User-User associations (collaborations, mentorship)
 db._createEdgeCollection("user_collaborations");
@@ -54,7 +54,7 @@ db.user_collaborations.ensureIndex({ type: "hash", fields: ["type"] }); // MENTO
 // User-Project associations (user contributes to projects)
 db._createEdgeCollection("user_projects");
 db.user_projects.ensureIndex({ type: "hash", fields: ["role"] }); // OWNER, CONTRIBUTOR, REVIEWER
-db.user_projects.ensureIndex({ type: "skiplist", fields: ["joinedAt"] });
+db.user_projects.ensureIndex({ type: "persistent", fields: ["joinedAt"] });
 
 // Quest-GeometryPattern associations (quests explore patterns)
 db._createEdgeCollection("quest_patterns");
@@ -69,13 +69,16 @@ db.user_patterns.ensureIndex({ type: "hash", fields: ["relationship"] }); // FAV
 // ==================================================
 
 // Full-text search for quests
-db.quests.ensureIndex({ type: "fulltext", fields: ["title", "description"] });
+db.quests.ensureIndex({ type: "fulltext", fields: ["title"] });
+db.quests.ensureIndex({ type: "fulltext", fields: ["description"] });
 
-// Full-text search for geometry patterns
-db.geometry_patterns.ensureIndex({ type: "fulltext", fields: ["name", "description"] });
+// Full-text search for geometry patterns  
+db.geometry_patterns.ensureIndex({ type: "fulltext", fields: ["name"] });
+db.geometry_patterns.ensureIndex({ type: "fulltext", fields: ["description"] });
 
 // Full-text search for projects
-db.projects.ensureIndex({ type: "fulltext", fields: ["name", "description"] });
+db.projects.ensureIndex({ type: "fulltext", fields: ["name"] });
+db.projects.ensureIndex({ type: "fulltext", fields: ["description"] });
 
 // Full-text search for users (display names, bio)
 db.users.ensureIndex({ type: "fulltext", fields: ["displayName"] });

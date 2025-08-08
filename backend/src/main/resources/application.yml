@@ -34,18 +34,10 @@ jwt:
   secret: ${JWT_SECRET:syntopia-secret-key-for-jwt-token-generation-make-this-longer-and-more-secure}
   expiration: ${JWT_EXPIRATION:86400000} # 24 hours in milliseconds
   refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000} # 7 days in milliseconds
-  timeout: 30000
-  useSsl: false
-
-# JWT Configuration
-jwt:
-  secret: ${JWT_SECRET:syntopia-jwt-secret-key-change-in-production}
-  expiration: 86400000 # 24 hours in milliseconds
-  refresh-expiration: 604800000 # 7 days in milliseconds
 
 # CORS Configuration
 cors:
-  allowed-origins: 
+  allowed-origins:
     - http://localhost:5173
     - http://localhost:3000
   allowed-methods:
