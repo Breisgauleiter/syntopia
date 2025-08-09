@@ -230,8 +230,10 @@ public class SimpleAuthController {
         public void setPassword(String password) { this.password = password; }
     }
 
-    /**
-     * Get current user info
+        /**
+     * Get current user information
+     * @param authHeader Authorization header with JWT token
+     * @return Current user data
      */
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser(@RequestHeader("Authorization") String authHeader) {
@@ -242,16 +244,81 @@ public class SimpleAuthController {
             }
 
             String token = authHeader.substring(7);
-            // Here you would validate the token and extract user info
-            // For now, return a simple response
+            
+            // Extract username from JWT token
+            String username = jwtTokenUtil.getUsernameFromToken(token);
+            if (username == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(createErrorResponse("Invalid token"));
+            }
+            
+            // Get user from database
+            Optional<User> userOptional = userService.findByUsername(username);
+            if (!userOptional.isPresent()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(createErrorResponse("User not found"));
+            }
+            
+            User user = userOptional.get();
+            
+            // Return user data
+            return ResponseEntity.ok(createUserResponse(user));
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(createErrorResponse("Error retrieving user information: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Update user profile (selected role, display name, etc.)
+     */
+    @PutMapping("/profile")
+    public ResponseEntity<?> updateProfile(@RequestBody UpdateProfileRequest request, @RequestHeader("Authorization") String token) {
+        try {
+            // Extract token from Authorization header
+            String jwtToken = token.replace("Bearer ", "");
+            String username = jwtTokenUtil.getUsernameFromToken(jwtToken);
+            
+            if (username == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(createErrorResponse("Invalid token"));
+            }
+            
+            // Get user from database
+            Optional<User> userOptional = userService.findByUsername(username);
+            if (!userOptional.isPresent()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(createErrorResponse("User not found"));
+            }
+            
+            User user = userOptional.get();
+            
+            // Update fields if provided
+            if (request.getSelectedRole() != null) {
+                user.setSelectedRole(request.getSelectedRole());
+            }
+            if (request.getDisplayName() != null && !request.getDisplayName().trim().isEmpty()) {
+                user.setDisplayName(request.getDisplayName().trim());
+            }
+            if (request.getAvatarUrl() != null) {
+                user.setAvatarUrl(request.getAvatarUrl());
+            }
+            
+            // Save updated user
+            userService.save(user);
+            
+            // Return updated user data
             Map<String, Object> response = new HashMap<>();
-            response.put("message", "User info endpoint");
-            response.put("token", "received");
+            response.put("success", true);
+            response.put("message", "Profile updated successfully");
+            response.put("user", createUserResponse(user));
+            
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(createErrorResponse("Error retrieving user information"));
+                .body(createErrorResponse("Error updating profile: " + e.getMessage()));
         }
     }
 
@@ -269,6 +336,70 @@ public class SimpleAuthController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(createErrorResponse("Error during logout"));
+        }
+    }
+
+    /**
+     * Promote user to admin (Temporary setup endpoint)
+     * WARNING: This should be removed in production!
+     */
+    @PostMapping("/promote-admin/{username}")
+    public ResponseEntity<?> promoteToAdmin(@PathVariable String username) {
+        try {
+            Optional<User> userOptional = userService.findByUsername(username);
+            if (!userOptional.isPresent()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(createErrorResponse("User not found"));
+            }
+            
+            User user = userOptional.get();
+            userService.addRoleToUser(user.getId(), "ROLE_ADMIN");
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "User promoted to admin successfully");
+            response.put("username", username);
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(createErrorResponse("Error promoting user to admin: " + e.getMessage()));
+        }
+    }
+
+    // Inner classes for request/response objects
+    
+    /**
+     * Update Profile Request DTO
+     */
+    public static class UpdateProfileRequest {
+        private String selectedRole;
+        private String displayName;
+        private String avatarUrl;
+
+        public String getSelectedRole() {
+            return selectedRole;
+        }
+
+        public void setSelectedRole(String selectedRole) {
+            this.selectedRole = selectedRole;
+        }
+
+        public String getDisplayName() {
+            return displayName;
+        }
+
+        public void setDisplayName(String displayName) {
+            this.displayName = displayName;
+        }
+
+        public String getAvatarUrl() {
+            return avatarUrl;
+        }
+
+        public void setAvatarUrl(String avatarUrl) {
+            this.avatarUrl = avatarUrl;
         }
     }
 }

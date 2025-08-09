@@ -1,230 +1,429 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useUserStore } from '@/stores/user'
+import questService, { 
+  Quest, 
+  QuestType, 
+  QuestDifficulty, 
+  QuestStatus, 
+  QuestFilter 
+} from '@/services/quest.service'
+import onboardingService, { OnboardingQuest } from '@/services/onboarding.service'
 
 const userStore = useUserStore()
 
-interface Quest {
-  id: string
-  title: string
-  description: string
-  category: 'coding' | 'exploration' | 'community' | 'wisdom' | 'meditation'
-  difficulty: number
-  experiencePoints: number
-  requiredLevel: number
-  estimatedTime: string
-  objectives: string[]
-  isCompleted: boolean
-  progress: number
-  githubIssue?: {
-    repository: string
-    issueNumber: number
-    url: string
+// Reactive state
+const quests = ref<Quest[]>([])
+const availableQuests = ref<Quest[]>([])
+const completedQuests = ref<Quest[]>([])
+const onboardingQuests = ref<OnboardingQuest[]>([])
+const loading = ref(false)
+const error = ref<string | null>(null)
+const selectedQuest = ref<Quest | null>(null)
+const showQuestModal = ref(false)
+const showExperienceAnimation = ref(false)
+const experienceGained = ref(0)
+
+// Tab management
+const activeTab = ref<'available' | 'completed' | 'github'>('available')
+
+// Filtering state
+const filters = ref<QuestFilter>({
+  type: undefined,
+  difficulty: undefined,
+  role: undefined,
+  status: QuestStatus.AVAILABLE
+})
+
+const sortBy = ref<'title' | 'difficulty' | 'experience' | 'level'>('title')
+const sortDirection = ref<'asc' | 'desc'>('asc')
+
+// Quest statistics
+const questStats = ref({
+  totalAvailable: 0,
+  totalCompleted: 0,
+  totalExperience: 0,
+  averageDifficulty: 0
+})
+
+/**
+ * Load quests from API
+ */
+const loadQuests = async () => {
+  loading.value = true
+  error.value = null
+  
+  try {
+    // Load all quests
+    const allQuestsResponse = await questService.getAllQuests()
+    if (allQuestsResponse.success && allQuestsResponse.data?.quests) {
+      quests.value = allQuestsResponse.data.quests
+    }
+
+    // Load available quests for current user
+    if (userStore.user?.id) {
+      const availableResponse = await questService.getAvailableQuests(userStore.user.id)
+      if (availableResponse.success && availableResponse.data?.quests) {
+        availableQuests.value = availableResponse.data.quests
+      }
+    }
+
+    // Load quest statistics
+    const statsResponse = await questService.getQuestStats()
+    if (statsResponse.success) {
+      questStats.value = {
+        ...questStats.value,
+        ...statsResponse.data
+      }
+    }
+
+    // Filter completed quests
+    completedQuests.value = quests.value.filter(quest => quest.status === QuestStatus.COMPLETED)
+
+    // Load onboarding quests if user has selected a role
+    await loadOnboardingQuests()
+
+  } catch (err) {
+    console.error('Error loading quests:', err)
+    error.value = 'Failed to load quests. Please try again.'
+  } finally {
+    loading.value = false
   }
-  unlockConditions?: string[]
 }
 
-const activeTab = ref<'available' | 'completed' | 'github'>('available')
-const selectedQuest = ref<Quest | null>(null)
-
-// Mock quest data - in real app, this would come from the backend
-const quests = ref<Quest[]>([
-  {
-    id: 'first-meditation',
-    title: 'Sacred Geometry Meditation',
-    description: 'Complete your first 10-minute meditation session while focusing on the Flower of Life pattern.',
-    category: 'meditation',
-    difficulty: 1,
-    experiencePoints: 100,
-    requiredLevel: 1,
-    estimatedTime: '15 min',
-    objectives: [
-      'Visit the Geometry Explorer',
-      'Select the Flower of Life pattern',
-      'Complete 10-minute focused meditation',
-      'Record your insights in your journal'
-    ],
-    isCompleted: false,
-    progress: 0
-  },
-  {
-    id: 'profile-setup',
-    title: 'Choose Your Sacred Path',
-    description: 'Complete your Syntopia profile by selecting your sacred role and setting your intentions.',
-    category: 'exploration',
-    difficulty: 1,
-    experiencePoints: 150,
-    requiredLevel: 1,
-    estimatedTime: '10 min',
-    objectives: [
-      'Select your Sacred Role',
-      'Write a personal intention statement',
-      'Upload a profile avatar',
-      'Connect your GitHub account'
-    ],
-    isCompleted: userStore.user?.role !== 'None',
-    progress: userStore.user?.role !== 'None' ? 100 : 25
-  },
-  {
-    id: 'community-intro',
-    title: 'Community Introduction',
-    description: 'Introduce yourself to the Syntopia community and make your first connection.',
-    category: 'community',
-    difficulty: 2,
-    experiencePoints: 200,
-    requiredLevel: 2,
-    estimatedTime: '20 min',
-    objectives: [
-      'Write an introduction post',
-      'Comment on 3 other introduction posts',
-      'Join a Sacred Role discussion group',
-      'Schedule a virtual coffee chat'
-    ],
-    isCompleted: false,
-    progress: 0,
-    unlockConditions: ['Complete Profile Setup']
-  },
-  {
-    id: 'first-contribution',
-    title: 'First Open Source Contribution',
-    description: 'Make your first contribution to an open source project through the Syntopia platform.',
-    category: 'coding',
-    difficulty: 3,
-    experiencePoints: 500,
-    requiredLevel: 4,
-    estimatedTime: '2-4 hours',
-    objectives: [
-      'Select a beginner-friendly GitHub issue',
-      'Fork the repository',
-      'Implement the solution',
-      'Submit a pull request',
-      'Engage with code review feedback'
-    ],
-    isCompleted: false,
-    progress: 0,
-    githubIssue: {
-      repository: 'syntopia-project/beginner-challenges',
-      issueNumber: 42,
-      url: 'https://github.com/syntopia-project/beginner-challenges/issues/42'
-    },
-    unlockConditions: ['Reach Level 4', 'Connect GitHub Account']
-  },
-  {
-    id: 'geometry-mastery',
-    title: 'Sacred Pattern Mastery',
-    description: 'Unlock and explore all basic sacred geometry patterns.',
-    category: 'exploration',
-    difficulty: 3,
-    experiencePoints: 300,
-    requiredLevel: 3,
-    estimatedTime: '1-2 hours',
-    objectives: [
-      'Explore the Flower of Life',
-      'Study the Vesica Piscis',
-      'Understand the Golden Spiral',
-      'Create a personal geometry journal',
-      'Share insights with the community'
-    ],
-    isCompleted: false,
-    progress: 40
-  },
-  {
-    id: 'wisdom-keeper-path',
-    title: 'Document Ancient Wisdom',
-    description: 'Research and document a piece of ancient mathematical or spiritual wisdom.',
-    category: 'wisdom',
-    difficulty: 4,
-    experiencePoints: 750,
-    requiredLevel: 6,
-    estimatedTime: '3-5 hours',
-    objectives: [
-      'Choose a topic from the wisdom library',
-      'Research historical sources',
-      'Write a comprehensive article',
-      'Include visual examples',
-      'Present to the community'
-    ],
-    isCompleted: false,
-    progress: 0,
-    unlockConditions: ['Choose Wisdom Keeper Role', 'Complete 5 other quests']
+/**
+ * Load onboarding quests for the current user's role
+ */
+const loadOnboardingQuests = async () => {
+  if (!userStore.userRole || userStore.userRole === 'None') {
+    onboardingQuests.value = []
+    return
   }
-])
 
-const availableQuests = computed(() => {
-  return quests.value.filter(quest => 
-    !quest.isCompleted && 
-    userStore.userLevel >= quest.requiredLevel &&
-    areUnlockConditionsMet(quest)
-  )
+  try {
+    const currentLevel = userStore.userLevel
+    const role = userStore.userRole
+    
+    // Load onboarding quests for levels 1-4
+    const questPromises = []
+    for (let level = 1; level <= 4; level++) {
+      questPromises.push(onboardingService.getQuestByRoleAndLevel(role, level))
+    }
+    
+    const quests = await Promise.all(questPromises)
+    onboardingQuests.value = quests
+  } catch (err) {
+    console.warn('Failed to load onboarding quests:', err)
+  }
+}
+
+// Computed properties
+const hasActiveOnboardingQuests = computed(() => {
+  return userStore.userRole && 
+         userStore.userRole !== 'None' && 
+         userStore.userLevel <= 4 &&
+         onboardingQuests.value.length > 0
 })
 
-const completedQuests = computed(() => {
-  return quests.value.filter(quest => quest.isCompleted)
-})
-
-const githubQuests = computed(() => {
-  return quests.value.filter(quest => quest.githubIssue && !quest.isCompleted)
-})
-
-const areUnlockConditionsMet = (quest: Quest): boolean => {
-  if (!quest.unlockConditions) return true
+const nextOnboardingQuest = computed(() => {
+  if (!hasActiveOnboardingQuests.value) return null
   
-  // For demo purposes, simplified condition checking
-  return quest.unlockConditions.every(condition => {
-    if (condition.includes('Level')) {
-      const requiredLevel = parseInt(condition.match(/\d+/)?.[0] || '0')
-      return userStore.userLevel >= requiredLevel
+  const currentLevel = userStore.userLevel
+  return onboardingQuests.value.find(quest => quest.level === currentLevel)
+})
+
+/**
+ * Accept a quest
+ */
+const acceptQuest = async (quest: Quest) => {
+  if (!userStore.user?.id) {
+    error.value = 'You must be logged in to accept quests'
+    return
+  }
+
+  loading.value = true
+  
+  try {
+    const response = await questService.acceptQuest(quest.id, userStore.user.id)
+    
+    if (response.success) {
+      // Update quest status
+      const questIndex = quests.value.findIndex(q => q.id === quest.id)
+      if (questIndex !== -1) {
+        quests.value[questIndex].status = QuestStatus.ACTIVE
+      }
+
+      // Update user data if returned
+      if (response.data?.user) {
+        userStore.updateUserData(response.data.user)
+      }
+
+      // Show success message
+      console.log('✅ Quest accepted successfully:', response.data?.message)
+      
+      // Reload quests to get updated data
+      await loadQuests()
+      
+    } else {
+      error.value = response.error?.message || 'Failed to accept quest'
     }
-    if (condition.includes('Profile Setup')) {
-      return userStore.user?.role !== 'None'
+  } catch (err) {
+    console.error('Error accepting quest:', err)
+    error.value = 'Failed to accept quest. Please try again.'
+  } finally {
+    loading.value = false
+  }
+}
+
+/**
+ * Complete a quest
+ */
+const completeQuest = async (quest: Quest) => {
+  if (!userStore.user?.id) {
+    error.value = 'You must be logged in to complete quests'
+    return
+  }
+
+  loading.value = true
+  
+  try {
+    const response = await questService.completeQuest(quest.id, userStore.user.id)
+    
+    if (response.success) {
+      // Update quest status
+      const questIndex = quests.value.findIndex(q => q.id === quest.id)
+      if (questIndex !== -1) {
+        quests.value[questIndex].status = QuestStatus.COMPLETED
+      }
+
+      // Update user data and show experience animation
+      if (response.data?.user) {
+        const oldExperience = userStore.user?.experiencePoints || 0
+        userStore.updateUserData(response.data.user)
+        
+        // Show experience gained animation
+        experienceGained.value = quest.experienceReward
+        showExperienceAnimation.value = true
+        
+        // Hide animation after 3 seconds
+        setTimeout(() => {
+          showExperienceAnimation.value = false
+        }, 3000)
+      }
+
+      // Show success message
+      console.log('🎉 Quest completed successfully:', response.data?.message)
+      
+      // Reload quests to get updated data
+      await loadQuests()
+      
+      // Close quest modal if open
+      showQuestModal.value = false
+      
+    } else {
+      error.value = response.error?.message || 'Failed to complete quest'
     }
+  } catch (err) {
+    console.error('Error completing quest:', err)
+    error.value = 'Failed to complete quest. Please try again.'
+  } finally {
+    loading.value = false
+  }
+}
+
+/**
+ * Abandon a quest
+ */
+const abandonQuest = async (quest: Quest) => {
+  if (!userStore.user?.id) {
+    error.value = 'You must be logged in to abandon quests'
+    return
+  }
+
+  if (!confirm('Are you sure you want to abandon this quest?')) {
+    return
+  }
+
+  loading.value = true
+  
+  try {
+    const response = await questService.abandonQuest(quest.id, userStore.user.id)
+    
+    if (response.success) {
+      // Update quest status
+      const questIndex = quests.value.findIndex(q => q.id === quest.id)
+      if (questIndex !== -1) {
+        quests.value[questIndex].status = QuestStatus.AVAILABLE
+      }
+
+      console.log('Quest abandoned successfully')
+      await loadQuests()
+      
+    } else {
+      error.value = response.error?.message || 'Failed to abandon quest'
+    }
+  } catch (err) {
+    console.error('Error abandoning quest:', err)
+    error.value = 'Failed to abandon quest. Please try again.'
+  } finally {
+    loading.value = false
+  }
+}
+
+/**
+ * Filter and sort quests
+ */
+const filteredQuests = computed(() => {
+  let questsToFilter: Quest[] = []
+  
+  switch (activeTab.value) {
+    case 'available':
+      questsToFilter = availableQuests.value
+      break
+    case 'completed':
+      questsToFilter = completedQuests.value
+      break
+    case 'github':
+      questsToFilter = quests.value.filter(q => q.type === QuestType.GITHUB)
+      break
+    default:
+      questsToFilter = availableQuests.value
+  }
+
+  // Apply filters
+  let filtered = questsToFilter.filter(quest => {
+    if (filters.value.type && quest.type !== filters.value.type) return false
+    if (filters.value.difficulty && quest.difficulty !== filters.value.difficulty) return false
+    if (filters.value.role && quest.role && quest.role !== filters.value.role && quest.role !== 'All') return false
     return true
   })
+
+  // Sort quests
+  filtered.sort((a, b) => {
+    let aValue: any, bValue: any
+    
+    switch (sortBy.value) {
+      case 'title':
+        aValue = a.title.toLowerCase()
+        bValue = b.title.toLowerCase()
+        break
+      case 'difficulty':
+        aValue = Object.values(QuestDifficulty).indexOf(a.difficulty)
+        bValue = Object.values(QuestDifficulty).indexOf(b.difficulty)
+        break
+      case 'experience':
+        aValue = a.experienceReward
+        bValue = b.experienceReward
+        break
+      case 'level':
+        aValue = a.requiredLevel
+        bValue = b.requiredLevel
+        break
+      default:
+        return 0
+    }
+    
+    if (sortDirection.value === 'asc') {
+      return aValue < bValue ? -1 : aValue > bValue ? 1 : 0
+    } else {
+      return aValue > bValue ? -1 : aValue < bValue ? 1 : 0
+    }
+  })
+
+  return filtered
+})
+
+/**
+ * GitHub quests computed property
+ */
+const githubQuests = computed(() => {
+  return quests.value.filter(quest => quest.type === QuestType.GITHUB)
+})
+
+/**
+ * Open quest detail modal
+ */
+const openQuestModal = (quest: Quest) => {
+  selectedQuest.value = quest
+  showQuestModal.value = true
 }
 
-const getCategoryIcon = (category: string): string => {
-  switch (category) {
-    case 'coding': return '💻'
-    case 'exploration': return '🔍'
-    case 'community': return '🤝'
-    case 'wisdom': return '📚'
-    case 'meditation': return '🧘‍♀️'
-    default: return '⭐'
+/**
+ * Close quest detail modal
+ */
+const closeQuestModal = () => {
+  selectedQuest.value = null
+  showQuestModal.value = false
+}
+
+/**
+ * Check if user can access quest
+ */
+const canUserAccessQuest = (quest: Quest): boolean => {
+  if (!userStore.user) return false
+  
+  return questService.canUserAccessQuest(
+    quest, 
+    userStore.user.currentLevel, 
+    userStore.user.selectedRole
+  )
+}
+
+/**
+ * Get quest type icon and color
+ */
+const getQuestTypeIcon = (type: QuestType): string => {
+  return questService.getTypeIcon(type)
+}
+
+const getDifficultyColor = (difficulty: QuestDifficulty): string => {
+  return questService.getDifficultyColor(difficulty)
+}
+
+/**
+ * Clear filters
+ */
+const clearFilters = () => {
+  filters.value = {
+    type: undefined,
+    difficulty: undefined,
+    role: undefined,
+    status: QuestStatus.AVAILABLE
   }
 }
 
-const getCategoryColor = (category: string): string => {
-  switch (category) {
-    case 'coding': return 'text-blue-400'
-    case 'exploration': return 'text-purple-400'
-    case 'community': return 'text-green-400'
-    case 'wisdom': return 'text-yellow-400'
-    case 'meditation': return 'text-pink-400'
+/**
+ * Get category color
+ */
+const getCategoryColor = (type: QuestType): string => {
+  switch (type) {
+    case QuestType.GITHUB: return 'text-blue-400'
+    case QuestType.MEDITATION: return 'text-purple-400'
+    case QuestType.LEARNING: return 'text-green-400'
+    case QuestType.COMMUNITY: return 'text-yellow-400'
+    case QuestType.CODING: return 'text-red-400'
     default: return 'text-gray-400'
   }
 }
 
-const getDifficultyStars = (difficulty: number): string => {
-  return '★'.repeat(difficulty) + '☆'.repeat(5 - difficulty)
-}
-
-const startQuest = (quest: Quest) => {
-  selectedQuest.value = quest
-  // In a real app, this would make an API call to start the quest
-  console.log('Starting quest:', quest.id)
-}
-
-const completeObjective = (questId: string, objectiveIndex: number) => {
-  const quest = quests.value.find(q => q.id === questId)
-  if (quest && !quest.isCompleted) {
-    quest.progress = Math.min(100, quest.progress + (100 / quest.objectives.length))
-    if (quest.progress >= 100) {
-      quest.isCompleted = true
-      userStore.addExperiencePoints(quest.experiencePoints)
-    }
+/**
+ * Get difficulty stars
+ */
+const getDifficultyStars = (difficulty: QuestDifficulty): string => {
+  const levels = {
+    [QuestDifficulty.EASY]: 1,
+    [QuestDifficulty.MEDIUM]: 2,
+    [QuestDifficulty.HARD]: 3,
+    [QuestDifficulty.EXPERT]: 4,
+    [QuestDifficulty.LEGENDARY]: 5
   }
+  const level = levels[difficulty] || 1
+  return '★'.repeat(level) + '☆'.repeat(5 - level)
 }
 
+/**
+ * Get progress color
+ */
 const getProgressColor = (progress: number): string => {
   if (progress < 25) return 'bg-red-500'
   if (progress < 50) return 'bg-yellow-500'
@@ -232,21 +431,112 @@ const getProgressColor = (progress: number): string => {
   return 'bg-green-500'
 }
 
+// Lifecycle hooks
 onMounted(() => {
-  // Load user's quest progress from backend
-  console.log('Loading quest progress for user:', userStore.user?.id)
+  loadQuests()
+})
+
+// Watch for user changes to reload quests
+watch(() => userStore.user?.id, (newUserId) => {
+  if (newUserId) {
+    loadQuests()
+  }
+})
+
+// Clear error when switching tabs
+watch(activeTab, () => {
+  error.value = null
 })
 </script>
 
 <template>
   <div class="quests-view">
     <div class="container">
+      <!-- Experience Animation -->
+      <div v-if="showExperienceAnimation" class="experience-animation">
+        <div class="experience-bubble">
+          +{{ experienceGained }} XP
+        </div>
+      </div>
+
+      <!-- Error Message -->
+      <div v-if="error" class="error-banner">
+        <span>{{ error }}</span>
+        <button @click="error = null" class="close-error">×</button>
+      </div>
+
+      <!-- Loading Spinner -->
+      <div v-if="loading" class="loading-overlay">
+        <div class="loading-spinner"></div>
+      </div>
+
       <!-- Header -->
       <div class="quests-header">
         <h1 class="page-title">Sacred Quests</h1>
         <p class="page-subtitle">
           Embark on meaningful challenges that expand consciousness and contribute to the collective
         </p>
+        
+        <!-- Onboarding Call-to-Action -->
+        <div v-if="!userStore.userRole || userStore.userRole === 'None'" class="onboarding-banner glass">
+          <div class="onboarding-content">
+            <div class="onboarding-icon">🌟</div>
+            <div class="onboarding-text">
+              <h3>Begin Your Sacred Journey</h3>
+              <p>Choose your role and start with foundational onboarding quests to unlock your path forward.</p>
+            </div>
+            <router-link to="/onboarding" class="btn btn-primary btn-lg">
+              Start Onboarding
+            </router-link>
+          </div>
+        </div>
+
+        <!-- Active Onboarding Quest -->
+        <div v-else-if="hasActiveOnboardingQuests && nextOnboardingQuest" class="onboarding-progress glass">
+          <div class="onboarding-header">
+            <h3>🎯 Current Onboarding Quest</h3>
+            <div class="level-badge">Level {{ nextOnboardingQuest.level }}</div>
+          </div>
+          <div class="onboarding-quest-card">
+            <div class="quest-content">
+              <h4>{{ nextOnboardingQuest.title }}</h4>
+              <p>{{ nextOnboardingQuest.description }}</p>
+              <div class="quest-meta">
+                <span class="xp-reward">+{{ nextOnboardingQuest.xpReward }} XP</span>
+                <span class="syn-principle">{{ nextOnboardingQuest.synPrinciple }}</span>
+              </div>
+            </div>
+            <div class="quest-action">
+              <router-link to="/onboarding" class="btn btn-secondary">
+                Continue Quest
+              </router-link>
+            </div>
+          </div>
+          <div class="onboarding-timeline">
+            <div class="timeline-item" 
+                 v-for="quest in onboardingQuests" 
+                 :key="quest.id"
+                 :class="{ 
+                   'completed': quest.level < userStore.userLevel,
+                   'current': quest.level === userStore.userLevel,
+                   'future': quest.level > userStore.userLevel
+                 }">
+              <div class="timeline-dot"></div>
+              <div class="timeline-label">Level {{ quest.level }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Onboarding Completed -->
+        <div v-else-if="userStore.userRole && userStore.userRole !== 'None' && userStore.userLevel > 4" class="onboarding-completed glass">
+          <div class="completion-content">
+            <div class="completion-icon">🎉</div>
+            <div class="completion-text">
+              <h3>Onboarding Complete!</h3>
+              <p>You have mastered the foundations as a <strong>{{ userStore.userRole }}</strong>. Ready for advanced quests!</p>
+            </div>
+          </div>
+        </div>
         
         <!-- Progress Overview -->
         <div class="progress-overview">
@@ -255,7 +545,7 @@ onMounted(() => {
             <div class="progress-label">Current Level</div>
           </div>
           <div class="progress-card glass">
-            <div class="progress-number">{{ userStore.user?.experiencePoints.toLocaleString() }}</div>
+            <div class="progress-number">{{ userStore.user?.experiencePoints?.toLocaleString() || 0 }}</div>
             <div class="progress-label">Experience Points</div>
           </div>
           <div class="progress-card glass">
@@ -267,6 +557,51 @@ onMounted(() => {
             <div class="progress-label">Available Quests</div>
           </div>
         </div>
+      </div>
+
+      <!-- Quest Filters -->
+      <div class="quest-filters glass">
+        <div class="filter-group">
+          <label for="type-filter">Type:</label>
+          <select id="type-filter" v-model="filters.type">
+            <option :value="undefined">All Types</option>
+            <option v-for="type in Object.values(QuestType)" :key="type" :value="type">
+              {{ type }}
+            </option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label for="difficulty-filter">Difficulty:</label>
+          <select id="difficulty-filter" v-model="filters.difficulty">
+            <option :value="undefined">All Difficulties</option>
+            <option v-for="difficulty in Object.values(QuestDifficulty)" :key="difficulty" :value="difficulty">
+              {{ difficulty }}
+            </option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label for="sort-filter">Sort by:</label>
+          <select id="sort-filter" v-model="sortBy">
+            <option value="title">Title</option>
+            <option value="difficulty">Difficulty</option>
+            <option value="experience">Experience</option>
+            <option value="level">Required Level</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label for="direction-filter">Order:</label>
+          <select id="direction-filter" v-model="sortDirection">
+            <option value="asc">Ascending</option>
+            <option value="desc">Descending</option>
+          </select>
+        </div>
+        
+        <button @click="clearFilters" class="btn btn-ghost btn-sm">
+          Clear Filters
+        </button>
       </div>
 
       <!-- Quest Tabs -->
@@ -298,26 +633,30 @@ onMounted(() => {
       <div class="quest-content">
         <!-- Available Quests -->
         <div v-if="activeTab === 'available'" class="quest-list">
-          <div v-if="availableQuests.length === 0" class="empty-state card">
+          <div v-if="filteredQuests.length === 0" class="empty-state card">
             <div class="empty-icon">🎯</div>
-            <h3>All Quests Completed!</h3>
-            <p>You've completed all available quests for your current level. 
-               Continue growing to unlock new challenges.</p>
+            <h3>No Available Quests</h3>
+            <p v-if="availableQuests.length === 0">
+              All quests completed! Continue growing to unlock new challenges.
+            </p>
+            <p v-else>
+              No quests match your current filters. Try adjusting the filters above.
+            </p>
           </div>
           
           <div 
-            v-for="quest in availableQuests" 
+            v-for="quest in filteredQuests" 
             :key="quest.id"
             class="quest-card card"
           >
             <div class="quest-header">
               <div class="quest-category">
-                <span class="category-icon">{{ getCategoryIcon(quest.category) }}</span>
-                <span class="category-name" :class="getCategoryColor(quest.category)">
-                  {{ quest.category.charAt(0).toUpperCase() + quest.category.slice(1) }}
+                <span class="category-icon">{{ getQuestTypeIcon(quest.type) }}</span>
+                <span class="category-name" :class="getCategoryColor(quest.type)">
+                  {{ quest.type }}
                 </span>
               </div>
-              <div class="quest-difficulty">
+              <div class="quest-difficulty" :style="{ color: getDifficultyColor(quest.difficulty) }">
                 {{ getDifficultyStars(quest.difficulty) }}
               </div>
             </div>
@@ -328,20 +667,20 @@ onMounted(() => {
             <div class="quest-meta">
               <div class="meta-item">
                 <span class="meta-label">XP Reward:</span>
-                <span class="meta-value text-primary">{{ quest.experiencePoints }}</span>
-              </div>
-              <div class="meta-item">
-                <span class="meta-label">Estimated Time:</span>
-                <span class="meta-value">{{ quest.estimatedTime }}</span>
+                <span class="meta-value text-primary">{{ quest.experienceReward }}</span>
               </div>
               <div class="meta-item">
                 <span class="meta-label">Required Level:</span>
                 <span class="meta-value">{{ quest.requiredLevel }}</span>
               </div>
+              <div v-if="quest.role" class="meta-item">
+                <span class="meta-label">Role:</span>
+                <span class="meta-value">{{ quest.role }}</span>
+              </div>
             </div>
             
-            <!-- Progress Bar -->
-            <div v-if="quest.progress > 0" class="quest-progress">
+            <!-- Progress Bar (if quest is active) -->
+            <div v-if="quest.status === QuestStatus.ACTIVE && quest.progress !== undefined" class="quest-progress">
               <div class="progress-bar">
                 <div 
                   class="progress-fill"
@@ -353,21 +692,43 @@ onMounted(() => {
             </div>
             
             <!-- GitHub Issue Link -->
-            <div v-if="quest.githubIssue" class="github-link">
-              <a :href="quest.githubIssue.url" target="_blank" class="btn btn-ghost btn-sm">
+            <div v-if="quest.githubUrl" class="github-link">
+              <a :href="quest.githubUrl" target="_blank" class="btn btn-ghost btn-sm">
                 <span>🔗</span>
-                {{ quest.githubIssue.repository }}#{{ quest.githubIssue.issueNumber }}
+                View on GitHub
               </a>
             </div>
             
             <div class="quest-actions">
               <button 
+                v-if="quest.status === QuestStatus.AVAILABLE"
                 class="btn btn-primary"
-                @click="startQuest(quest)"
+                @click="acceptQuest(quest)"
+                :disabled="!canUserAccessQuest(quest)"
               >
-                {{ quest.progress > 0 ? 'Continue Quest' : 'Start Quest' }}
+                Accept Quest
               </button>
-              <button class="btn btn-ghost">
+              
+              <button 
+                v-if="quest.status === QuestStatus.ACTIVE"
+                class="btn btn-success"
+                @click="completeQuest(quest)"
+              >
+                Complete Quest
+              </button>
+              
+              <button 
+                v-if="quest.status === QuestStatus.ACTIVE"
+                class="btn btn-warning"
+                @click="abandonQuest(quest)"
+              >
+                Abandon Quest
+              </button>
+              
+              <button 
+                class="btn btn-ghost"
+                @click="openQuestModal(quest)"
+              >
                 View Details
               </button>
             </div>
@@ -391,12 +752,12 @@ onMounted(() => {
             
             <div class="quest-header">
               <div class="quest-category">
-                <span class="category-icon">{{ getCategoryIcon(quest.category) }}</span>
-                <span class="category-name" :class="getCategoryColor(quest.category)">
-                  {{ quest.category.charAt(0).toUpperCase() + quest.category.slice(1) }}
+                <span class="category-icon">{{ getQuestTypeIcon(quest.type) }}</span>
+                <span class="category-name" :class="getCategoryColor(quest.type)">
+                  {{ quest.type }}
                 </span>
               </div>
-              <div class="quest-difficulty">
+              <div class="quest-difficulty" :style="{ color: getDifficultyColor(quest.difficulty) }">
                 {{ getDifficultyStars(quest.difficulty) }}
               </div>
             </div>
@@ -407,16 +768,20 @@ onMounted(() => {
             <div class="quest-meta">
               <div class="meta-item">
                 <span class="meta-label">XP Earned:</span>
-                <span class="meta-value text-primary">{{ quest.experiencePoints }}</span>
+                <span class="meta-value text-primary">{{ quest.experienceReward }}</span>
+              </div>
+              <div v-if="quest.completedAt" class="meta-item">
+                <span class="meta-label">Completed:</span>
+                <span class="meta-value">{{ new Date(quest.completedAt).toLocaleDateString() }}</span>
               </div>
             </div>
             
             <div class="quest-actions">
-              <button class="btn btn-ghost">
-                View Certificate
-              </button>
-              <button class="btn btn-ghost">
-                Share Achievement
+              <button 
+                class="btn btn-ghost"
+                @click="openQuestModal(quest)"
+              >
+                View Details
               </button>
             </div>
           </div>
@@ -427,7 +792,7 @@ onMounted(() => {
           <div v-if="githubQuests.length === 0" class="empty-state card">
             <div class="empty-icon">💻</div>
             <h3>No GitHub Quests Available</h3>
-            <p>GitHub integration quests unlock at Level 4. Keep progressing to access collaborative coding challenges!</p>
+            <p>GitHub integration quests unlock at higher levels. Keep progressing to access collaborative coding challenges!</p>
           </div>
           
           <div 
@@ -439,12 +804,12 @@ onMounted(() => {
             
             <div class="quest-header">
               <div class="quest-category">
-                <span class="category-icon">{{ getCategoryIcon(quest.category) }}</span>
-                <span class="category-name" :class="getCategoryColor(quest.category)">
-                  {{ quest.category.charAt(0).toUpperCase() + quest.category.slice(1) }}
+                <span class="category-icon">{{ getQuestTypeIcon(quest.type) }}</span>
+                <span class="category-name" :class="getCategoryColor(quest.type)">
+                  {{ quest.type }}
                 </span>
               </div>
-              <div class="quest-difficulty">
+              <div class="quest-difficulty" :style="{ color: getDifficultyColor(quest.difficulty) }">
                 {{ getDifficultyStars(quest.difficulty) }}
               </div>
             </div>
@@ -452,28 +817,48 @@ onMounted(() => {
             <h3 class="quest-title">{{ quest.title }}</h3>
             <p class="quest-description">{{ quest.description }}</p>
             
-            <div class="github-details">
-              <div class="repo-info">
-                <strong>Repository:</strong> {{ quest.githubIssue?.repository }}
+            <div class="quest-meta">
+              <div class="meta-item">
+                <span class="meta-label">XP Reward:</span>
+                <span class="meta-value text-primary">{{ quest.experienceReward }}</span>
               </div>
-              <div class="issue-info">
-                <strong>Issue:</strong> #{{ quest.githubIssue?.issueNumber }}
+              <div class="meta-item">
+                <span class="meta-label">Required Level:</span>
+                <span class="meta-value">{{ quest.requiredLevel }}</span>
+              </div>
+            </div>
+            
+            <div v-if="quest.githubUrl" class="github-details">
+              <div class="repo-info">
+                <strong>GitHub Issue:</strong> 
+                <a :href="quest.githubUrl" target="_blank" class="github-link-text">
+                  View Issue
+                </a>
               </div>
             </div>
             
             <div class="quest-actions">
               <a 
-                :href="quest.githubIssue?.url" 
+                v-if="quest.githubUrl"
+                :href="quest.githubUrl" 
                 target="_blank" 
                 class="btn btn-primary"
               >
                 View on GitHub
               </a>
               <button 
+                v-if="quest.status === QuestStatus.AVAILABLE"
                 class="btn btn-secondary"
-                @click="startQuest(quest)"
+                @click="acceptQuest(quest)"
+                :disabled="!canUserAccessQuest(quest)"
               >
                 Accept Quest
+              </button>
+              <button 
+                class="btn btn-ghost"
+                @click="openQuestModal(quest)"
+              >
+                View Details
               </button>
             </div>
           </div>
@@ -481,39 +866,65 @@ onMounted(() => {
       </div>
 
       <!-- Quest Detail Modal -->
-      <div v-if="selectedQuest" class="quest-modal-overlay" @click="selectedQuest = null">
+      <div v-if="showQuestModal && selectedQuest" class="quest-modal-overlay" @click="closeQuestModal">
         <div class="quest-modal card" @click.stop>
           <div class="modal-header">
             <h2>{{ selectedQuest.title }}</h2>
-            <button class="close-button" @click="selectedQuest = null">×</button>
+            <button class="close-button" @click="closeQuestModal">×</button>
           </div>
           
           <div class="modal-content">
             <p>{{ selectedQuest.description }}</p>
             
-            <h3>Objectives:</h3>
-            <ul class="objectives-list">
-              <li 
-                v-for="(objective, index) in selectedQuest.objectives" 
-                :key="index"
-                class="objective-item"
-              >
-                <input 
-                  type="checkbox" 
-                  :id="`obj-${index}`"
-                  @change="completeObjective(selectedQuest.id, index)"
-                >
-                <label :for="`obj-${index}`">{{ objective }}</label>
-              </li>
-            </ul>
+            <div class="quest-details">
+              <div class="detail-row">
+                <strong>Type:</strong> {{ selectedQuest.type }}
+              </div>
+              <div class="detail-row">
+                <strong>Difficulty:</strong> {{ selectedQuest.difficulty }}
+              </div>
+              <div class="detail-row">
+                <strong>Experience Reward:</strong> {{ selectedQuest.experienceReward }} XP
+              </div>
+              <div class="detail-row">
+                <strong>Required Level:</strong> {{ selectedQuest.requiredLevel }}
+              </div>
+              <div v-if="selectedQuest.role" class="detail-row">
+                <strong>Required Role:</strong> {{ selectedQuest.role }}
+              </div>
+              <div class="detail-row">
+                <strong>Status:</strong> {{ selectedQuest.status }}
+              </div>
+            </div>
+            
+            <div v-if="selectedQuest.githubUrl" class="github-section">
+              <h3>GitHub Integration</h3>
+              <a :href="selectedQuest.githubUrl" target="_blank" class="github-link-full">
+                🔗 View GitHub Issue
+              </a>
+            </div>
           </div>
           
           <div class="modal-actions">
-            <button class="btn btn-secondary" @click="selectedQuest = null">
+            <button class="btn btn-secondary" @click="closeQuestModal">
               Close
             </button>
-            <button class="btn btn-primary">
-              Mark as Complete
+            
+            <button 
+              v-if="selectedQuest.status === QuestStatus.AVAILABLE"
+              class="btn btn-primary"
+              @click="acceptQuest(selectedQuest); closeQuestModal()"
+              :disabled="!canUserAccessQuest(selectedQuest)"
+            >
+              Accept Quest
+            </button>
+            
+            <button 
+              v-if="selectedQuest.status === QuestStatus.ACTIVE"
+              class="btn btn-success"
+              @click="completeQuest(selectedQuest)"
+            >
+              Complete Quest
             </button>
           </div>
         </div>
@@ -526,6 +937,315 @@ onMounted(() => {
 .quests-view {
   min-height: 100vh;
   padding: 2rem 0;
+}
+
+/* Experience Animation */
+.experience-animation {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.experience-bubble {
+  background: linear-gradient(135deg, #ffd700, #ffed4e);
+  color: #1a1a2e;
+  padding: 1rem 2rem;
+  border-radius: 50px;
+  font-size: 1.5rem;
+  font-weight: bold;
+  animation: experienceFloat 3s ease-out forwards;
+  box-shadow: 0 0 30px rgba(255, 215, 0, 0.6);
+}
+
+@keyframes experienceFloat {
+  0% {
+    transform: scale(0) rotate(0deg);
+    opacity: 0;
+  }
+  20% {
+    transform: scale(1.2) rotate(-5deg);
+    opacity: 1;
+  }
+  80% {
+    transform: scale(1) rotate(5deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.8) translateY(-100px) rotate(0deg);
+    opacity: 0;
+  }
+}
+
+/* Error Banner */
+.error-banner {
+  background: linear-gradient(135deg, #ff4757, #ff3838);
+  color: white;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  margin-bottom: 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  animation: slideInDown 0.3s ease-out;
+}
+
+/* Onboarding Banner */
+.onboarding-banner {
+  background: linear-gradient(135deg, rgba(147, 51, 234, 0.1), rgba(79, 70, 229, 0.1));
+  border: 2px solid rgba(147, 51, 234, 0.3);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  margin-bottom: 2rem;
+  animation: slideInDown 0.5s ease-out;
+}
+
+.onboarding-content {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
+.onboarding-icon {
+  font-size: 3rem;
+  animation: pulse 2s infinite;
+}
+
+.onboarding-text h3 {
+  margin: 0 0 0.5rem 0;
+  color: var(--color-primary);
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.onboarding-text p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 1.1rem;
+  line-height: 1.5;
+}
+
+/* Onboarding Progress */
+.onboarding-progress {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(147, 51, 234, 0.1));
+  border: 2px solid rgba(79, 70, 229, 0.3);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  margin-bottom: 2rem;
+}
+
+.onboarding-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.onboarding-header h3 {
+  margin: 0;
+  color: var(--color-primary);
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.level-badge {
+  background: var(--color-primary);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.onboarding-quest-card {
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.quest-content {
+  flex: 1;
+}
+
+.quest-content h4 {
+  margin: 0 0 0.5rem 0;
+  color: var(--color-text);
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.quest-content p {
+  margin: 0 0 1rem 0;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.quest-meta {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.xp-reward {
+  background: linear-gradient(135deg, #ffd700, #ffed4e);
+  color: #1a1a2e;
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.syn-principle {
+  background: rgba(147, 51, 234, 0.2);
+  color: var(--color-primary);
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  font-size: 0.85rem;
+}
+
+.onboarding-timeline {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  align-items: center;
+}
+
+.timeline-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  opacity: 0.5;
+  transition: all 0.3s ease;
+}
+
+.timeline-item.completed {
+  opacity: 1;
+}
+
+.timeline-item.current {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.timeline-item.current .timeline-dot {
+  background: var(--color-primary);
+  box-shadow: 0 0 10px rgba(79, 70, 229, 0.5);
+}
+
+.timeline-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+  transition: all 0.3s ease;
+}
+
+.timeline-item.completed .timeline-dot {
+  background: var(--color-success);
+}
+
+.timeline-label {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+/* Onboarding Completed */
+.onboarding-completed {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(16, 185, 129, 0.1));
+  border: 2px solid rgba(34, 197, 94, 0.3);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  margin-bottom: 2rem;
+}
+
+.completion-content {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
+.completion-icon {
+  font-size: 3rem;
+  animation: bounce 2s infinite;
+}
+
+.completion-text h3 {
+  margin: 0 0 0.5rem 0;
+  color: var(--color-success);
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.completion-text p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 1.1rem;
+  line-height: 1.5;
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-10px);
+  }
+  60% {
+    transform: translateY(-5px);
+  }
+}
+
+.close-error {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.2s;
+}
+
+.close-error:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Loading Overlay */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top: 3px solid var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .quests-header {
@@ -572,6 +1292,44 @@ onMounted(() => {
 .progress-label {
   color: var(--color-text-muted);
   font-weight: 500;
+}
+
+/* Quest Filters */
+.quest-filters {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem;
+  border-radius: var(--radius-lg);
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 150px;
+}
+
+.filter-group label {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.filter-group select {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+  color: var(--color-text);
+  font-size: 0.875rem;
+}
+
+.filter-group select:focus {
+  outline: none;
+  border-color: var(--color-primary);
 }
 
 .quest-tabs {
@@ -671,7 +1429,6 @@ onMounted(() => {
 }
 
 .quest-difficulty {
-  color: var(--color-accent);
   font-size: 0.875rem;
 }
 
@@ -756,6 +1513,16 @@ onMounted(() => {
   color: var(--color-text-muted);
 }
 
+.github-link-text {
+  color: var(--color-primary);
+  text-decoration: none;
+  margin-left: 0.5rem;
+}
+
+.github-link-text:hover {
+  text-decoration: underline;
+}
+
 .quest-actions {
   display: flex;
   gap: 1rem;
@@ -837,36 +1604,49 @@ onMounted(() => {
   padding: 1.5rem;
 }
 
-.modal-content h3 {
-  margin: 1.5rem 0 1rem;
-  color: var(--color-text);
+.quest-details {
+  margin: 1.5rem 0;
 }
 
-.objectives-list {
-  list-style: none;
-  padding: 0;
-}
-
-.objective-item {
+.detail-row {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 0;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.objective-item:last-child {
-  border-bottom: none;
-}
-
-.objective-item input[type="checkbox"] {
-  accent-color: var(--color-primary);
-}
-
-.objective-item label {
+.detail-row strong {
+  min-width: 120px;
   color: var(--color-text-muted);
-  line-height: 1.5;
-  cursor: pointer;
+}
+
+.github-section {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.github-section h3 {
+  margin-bottom: 1rem;
+  color: var(--color-text);
+}
+
+.github-link-full {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-primary);
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-normal);
+}
+
+.github-link-full:hover {
+  background: var(--color-primary);
+  color: white;
 }
 
 .modal-actions {
@@ -877,10 +1657,31 @@ onMounted(() => {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+/* Animations */
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .progress-overview {
     grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .quest-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .filter-group {
+    min-width: auto;
   }
   
   .quest-tabs {

@@ -31,7 +31,11 @@ export const useUserStore = defineStore('user', () => {
   const error = ref<string | null>(null)
 
   // Getters
-  const isAuthenticated = computed(() => !!user.value && !!token.value)
+  const isAuthenticated = computed(() => {
+    const authenticated = !!user.value && !!token.value
+    console.log('isAuthenticated check:', authenticated, 'user:', !!user.value, 'token:', !!token.value)
+    return authenticated
+  })
   const userLevel = computed(() => user.value?.currentLevel || 1)
   const userRole = computed(() => user.value?.selectedRole || 'None')
   const canAccessGitHub = computed(() => (user.value?.currentLevel || 0) >= 4)
@@ -60,10 +64,13 @@ export const useUserStore = defineStore('user', () => {
     error.value = null
     
     try {
+      console.log('Login attempt with:', credentials.email || credentials.username)
       const response = await axios.post('/api/auth/login', credentials)
+      console.log('Login successful:', response.data.user.username)
       setAuthData(response.data)
       return true
     } catch (err: any) {
+      console.error('Login failed:', err.response?.data?.message || err.message)
       error.value = err.response?.data?.message || 'Login failed'
       return false
     } finally {
@@ -124,13 +131,34 @@ export const useUserStore = defineStore('user', () => {
   }
 
   const checkAuthStatus = async () => {
-    if (!token.value) return
+    const storedToken = localStorage.getItem('syntopia_token')
+    console.log('Checking auth status, stored token exists:', !!storedToken)
+    
+    if (!storedToken) {
+      console.log('No stored token, clearing auth data')
+      clearAuthData()
+      return
+    }
+    
+    // Set token if not already set
+    if (!token.value) {
+      token.value = storedToken
+      console.log('Set token from localStorage')
+    }
     
     try {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token.value}`
+      axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`
+      console.log('Making /api/auth/me request...')
       const response = await axios.get('/api/auth/me')
       user.value = response.data
+      console.log('Auth check successful, user:', response.data.username)
+      
+      // Ensure token is set correctly
+      if (!token.value) {
+        token.value = storedToken
+      }
     } catch (err) {
+      console.warn('Auth check failed, clearing invalid token:', err)
       clearAuthData()
     }
   }
@@ -166,6 +194,30 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
+  /**
+   * Update user data directly (used for quest completion, level ups, etc.)
+   */
+  const updateUserData = (newUserData: Partial<User>) => {
+    if (user.value) {
+      user.value = { ...user.value, ...newUserData }
+    }
+  }
+
+  /**
+   * Add experience points to user
+   */
+  const addExperiencePoints = (points: number) => {
+    if (user.value) {
+      user.value.experiencePoints += points
+      
+      // Check for level up (simple calculation: every 1000 XP = 1 level)
+      const newLevel = Math.floor(user.value.experiencePoints / 1000) + 1
+      if (newLevel > user.value.currentLevel) {
+        user.value.currentLevel = newLevel
+      }
+    }
+  }
+
   return {
     // State
     user,
@@ -188,6 +240,8 @@ export const useUserStore = defineStore('user', () => {
     logout,
     checkAuthStatus,
     updateProfile,
-    selectRole
+    selectRole,
+    updateUserData,
+    addExperiencePoints
   }
 })

@@ -161,7 +161,7 @@ const syntopiaRoles = [
           <div class="feature-card card">
             <div class="feature-icon">🤝</div>
             <h3>Conscious Collaboration</h3>
-            <p>Connect with like-minded individuals through the SYN principles of collective intelligence.</p>
+            <p>Connect with like-minded individuals through the SYN principles of syntropie, synthese, synarchie and synchronizität.</p>
           </div>
         </div>
       </div>

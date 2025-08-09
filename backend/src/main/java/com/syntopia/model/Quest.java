@@ -47,6 +47,9 @@ public class Quest {
     private List<String> completionSteps;
     private boolean isAutoValidated;
 
+    // Additional metadata for flexible quest data
+    private Map<String, Object> metadata;
+
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createdAt;
 
@@ -54,6 +57,12 @@ public class Quest {
     private LocalDateTime updatedAt;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    // Quest categorization and reusability
+    private QuestCategory category; // INDIVIDUAL, SHARED, UNIQUE
+    private boolean isReusable; // Can multiple users complete this quest?
+    private int maxCompletions; // Maximum number of completions (0 = unlimited)
+    private int currentCompletions; // Current number of completions
+
     private LocalDateTime dueDate;
 
     // Constructors
@@ -73,11 +82,23 @@ public class Quest {
     }
 
     // Enums
+    public enum QuestCategory {
+        INDIVIDUAL,  // Each user gets their own instance (onboarding quests)
+        SHARED,      // Multiple users can work on the same quest (learning quests)
+        UNIQUE       // Only one user can complete this quest (GitHub issues)
+    }
+
     public enum QuestType {
         PLATFORM,
         GITHUB_ISSUE,
         COMMUNITY,
-        SACRED_GEOMETRY
+        SACRED_GEOMETRY,
+        ONBOARDING,
+        LEARNING,
+        SKILL_BUILDING,
+        NETWORKING,
+        INTEGRATION,
+        CONTRIBUTION
     }
 
     public enum QuestStatus {
@@ -240,6 +261,17 @@ public class Quest {
         isAutoValidated = autoValidated;
     }
 
+    public Map<String, Object> getMetadata() {
+        if (metadata == null) {
+            metadata = new java.util.HashMap<>();
+        }
+        return metadata;
+    }
+
+    public void setMetadata(Map<String, Object> metadata) {
+        this.metadata = metadata;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -262,6 +294,47 @@ public class Quest {
 
     public void setDueDate(LocalDateTime dueDate) {
         this.dueDate = dueDate;
+    }
+
+    public QuestCategory getCategory() {
+        return category;
+    }
+
+    public void setCategory(QuestCategory category) {
+        this.category = category;
+    }
+
+    public boolean isReusable() {
+        return isReusable;
+    }
+
+    public void setReusable(boolean reusable) {
+        isReusable = reusable;
+    }
+
+    public int getMaxCompletions() {
+        return maxCompletions;
+    }
+
+    public void setMaxCompletions(int maxCompletions) {
+        this.maxCompletions = maxCompletions;
+    }
+
+    public int getCurrentCompletions() {
+        return currentCompletions;
+    }
+
+    public void setCurrentCompletions(int currentCompletions) {
+        this.currentCompletions = currentCompletions;
+    }
+
+    // Utility methods for quest availability
+    public boolean canBeCompletedByMoreUsers() {
+        return isReusable && (maxCompletions == 0 || currentCompletions < maxCompletions);
+    }
+
+    public boolean isLimitReached() {
+        return !isReusable || (maxCompletions > 0 && currentCompletions >= maxCompletions);
     }
 
     @Override

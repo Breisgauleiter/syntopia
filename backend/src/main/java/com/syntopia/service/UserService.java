@@ -140,6 +140,21 @@ public class UserService implements UserDetailsService {
     }
 
     /**
+     * Add a security role to a user (e.g., ROLE_ADMIN)
+     */
+    public User addRoleToUser(String userId, String role) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+        
+        if (user.getRoles() == null) {
+            user.setRoles(new java.util.HashSet<>());
+        }
+        
+        user.getRoles().add(role);
+        return userRepository.save(user);
+    }
+
+    /**
      * Save user
      */
     public User save(User user) {
@@ -151,10 +166,15 @@ public class UserService implements UserDetailsService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
         
+        // Use user's actual roles, default to ROLE_USER if none set
+        String[] authorities = user.getRoles() != null && !user.getRoles().isEmpty() 
+                ? user.getRoles().toArray(new String[0]) 
+                : new String[]{"ROLE_USER"};
+        
         return org.springframework.security.core.userdetails.User.builder()
                 .username(user.getUsername())
                 .password(user.getPasswordHash() != null ? user.getPasswordHash() : "") // Support both OAuth and password auth
-                .authorities("ROLE_USER")
+                .authorities(authorities)
                 .accountExpired(false)
                 .accountLocked(!user.isEnabled())
                 .credentialsExpired(false)

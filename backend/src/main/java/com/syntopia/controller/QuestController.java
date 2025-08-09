@@ -6,6 +6,7 @@ import com.syntopia.service.QuestService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -456,5 +457,34 @@ public class QuestController {
 
         public int getRequiredLevel() { return requiredLevel; }
         public void setRequiredLevel(int requiredLevel) { this.requiredLevel = requiredLevel; }
+    }
+
+    // ===============================
+    // Admin/Setup Endpoints
+    // ===============================
+
+    /**
+     * Seed onboarding quests into the database
+     * This endpoint should be called once during setup to populate
+     * the database with the onboarding quests
+     * ADMIN ONLY
+     */
+    @PostMapping("/seed-onboarding")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Object>> seedOnboardingQuests() {
+        try {
+            List<Quest> seededQuests = questService.seedOnboardingQuests();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Onboarding quests seeded successfully");
+            response.put("questsSeeded", seededQuests.size());
+            response.put("quests", seededQuests);
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(createErrorResponse("Failed to seed onboarding quests: " + e.getMessage()));
+        }
     }
 }
