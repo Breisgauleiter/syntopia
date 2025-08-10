@@ -2,19 +2,20 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useUserStore } from '@/stores/user'
 import questService, { 
-  Quest, 
+  type Quest, 
+  type UserQuest,
   QuestType, 
   QuestDifficulty, 
   QuestStatus, 
-  QuestFilter 
+  type QuestFilter 
 } from '@/services/quest.service'
-import onboardingService, { OnboardingQuest } from '@/services/onboarding.service'
+import onboardingService, { type OnboardingQuest } from '@/services/onboarding.service'
 
 const userStore = useUserStore()
 
 // Reactive state
 const quests = ref<Quest[]>([])
-const availableQuests = ref<Quest[]>([])
+const availableQuests = ref<UserQuest[]>([])
 const completedQuests = ref<Quest[]>([])
 const onboardingQuests = ref<OnboardingQuest[]>([])
 const loading = ref(false)
@@ -55,21 +56,21 @@ const loadQuests = async () => {
   
   try {
     // Load all quests
-    const allQuestsResponse = await questService.getAllQuests()
-    if (allQuestsResponse.success && allQuestsResponse.data?.quests) {
-      quests.value = allQuestsResponse.data.quests
+    const allQuestsResponse = await questService.getQuests()
+    if (allQuestsResponse.success && allQuestsResponse.data) {
+      quests.value = allQuestsResponse.data
     }
 
     // Load available quests for current user
     if (userStore.user?.id) {
-      const availableResponse = await questService.getAvailableQuests(userStore.user.id)
-      if (availableResponse.success && availableResponse.data?.quests) {
-        availableQuests.value = availableResponse.data.quests
+      const availableResponse = await questService.getUserQuests()
+      if (availableResponse.success && availableResponse.data) {
+        availableQuests.value = availableResponse.data
       }
     }
 
     // Load quest statistics
-    const statsResponse = await questService.getQuestStats()
+    const statsResponse = await questService.getUserQuestStatistics()
     if (statsResponse.success) {
       questStats.value = {
         ...questStats.value,
@@ -144,7 +145,7 @@ const acceptQuest = async (quest: Quest) => {
   loading.value = true
   
   try {
-    const response = await questService.acceptQuest(quest.id, userStore.user.id)
+    const response = await questService.acceptQuest(quest.id)
     
     if (response.success) {
       // Update quest status
@@ -154,8 +155,9 @@ const acceptQuest = async (quest: Quest) => {
       }
 
       // Update user data if returned
-      if (response.data?.user) {
-        userStore.updateUserData(response.data.user)
+      if (response.data?.userQuest) {
+        // Add the userQuest to our availableQuests
+        availableQuests.value.push(response.data.userQuest)
       }
 
       // Show success message
@@ -187,7 +189,7 @@ const completeQuest = async (quest: Quest) => {
   loading.value = true
   
   try {
-    const response = await questService.completeQuest(quest.id, userStore.user.id)
+    const response = await questService.completeQuest(quest.id)
     
     if (response.success) {
       // Update quest status
@@ -197,12 +199,15 @@ const completeQuest = async (quest: Quest) => {
       }
 
       // Update user data and show experience animation
-      if (response.data?.user) {
-        const oldExperience = userStore.user?.experiencePoints || 0
-        userStore.updateUserData(response.data.user)
+      if (response.data?.userQuest && response.data?.experienceAwarded) {
+        // Update the userQuest in our availableQuests
+        const questIndex = availableQuests.value.findIndex(uq => uq.questId === quest.id)
+        if (questIndex !== -1) {
+          availableQuests.value[questIndex] = response.data.userQuest
+        }
         
         // Show experience gained animation
-        experienceGained.value = quest.experienceReward
+        experienceGained.value = response.data.experienceAwarded
         showExperienceAnimation.value = true
         
         // Hide animation after 3 seconds
@@ -247,7 +252,7 @@ const abandonQuest = async (quest: Quest) => {
   loading.value = true
   
   try {
-    const response = await questService.abandonQuest(quest.id, userStore.user.id)
+    const response = await questService.abandonQuest(quest.id)
     
     if (response.success) {
       // Update quest status
@@ -278,16 +283,17 @@ const filteredQuests = computed(() => {
   
   switch (activeTab.value) {
     case 'available':
-      questsToFilter = availableQuests.value
+      // Convert UserQuests to Quest type by accessing the questId - for now just use quests array
+      questsToFilter = quests.value.filter(q => q.status === QuestStatus.AVAILABLE)
       break
     case 'completed':
       questsToFilter = completedQuests.value
       break
     case 'github':
-      questsToFilter = quests.value.filter(q => q.type === QuestType.GITHUB)
+      questsToFilter = quests.value.filter(q => q.type === QuestType.GITHUB_ISSUE)
       break
     default:
-      questsToFilter = availableQuests.value
+      questsToFilter = quests.value.filter(q => q.status === QuestStatus.AVAILABLE)
   }
 
   // Apply filters
@@ -337,7 +343,7 @@ const filteredQuests = computed(() => {
  * GitHub quests computed property
  */
 const githubQuests = computed(() => {
-  return quests.value.filter(quest => quest.type === QuestType.GITHUB)
+  return quests.value.filter(quest => quest.type === QuestType.GITHUB_ISSUE)
 })
 
 /**
@@ -362,18 +368,31 @@ const closeQuestModal = () => {
 const canUserAccessQuest = (quest: Quest): boolean => {
   if (!userStore.user) return false
   
-  return questService.canUserAccessQuest(
-    quest, 
-    userStore.user.currentLevel, 
-    userStore.user.selectedRole
-  )
+  // Check level requirement
+  if (userStore.user.currentLevel < quest.requiredLevel) return false
+  
+  // Check role requirement
+  if (quest.role && quest.role !== 'All' && userStore.user.selectedRole !== quest.role) return false
+  
+  return true
 }
 
 /**
  * Get quest type icon and color
  */
 const getQuestTypeIcon = (type: QuestType): string => {
-  return questService.getTypeIcon(type)
+  switch (type) {
+    case QuestType.GITHUB_ISSUE: return '🐙'
+    case QuestType.LEARNING: return '📚'
+    case QuestType.COMMUNITY: return '👥'
+    case QuestType.CONTRIBUTION: return '🤝'
+    case QuestType.NETWORKING: return '🌐'
+    case QuestType.SKILL_BUILDING: return '🔧'
+    case QuestType.INTEGRATION: return '🔗'
+    case QuestType.ONBOARDING: return '🚀'
+    case QuestType.GEOMETRY: return '🔮'
+    default: return '⭐'
+  }
 }
 
 const getDifficultyColor = (difficulty: QuestDifficulty): string => {
@@ -397,11 +416,15 @@ const clearFilters = () => {
  */
 const getCategoryColor = (type: QuestType): string => {
   switch (type) {
-    case QuestType.GITHUB: return 'text-blue-400'
-    case QuestType.MEDITATION: return 'text-purple-400'
+    case QuestType.GITHUB_ISSUE: return 'text-blue-400'
     case QuestType.LEARNING: return 'text-green-400'
     case QuestType.COMMUNITY: return 'text-yellow-400'
-    case QuestType.CODING: return 'text-red-400'
+    case QuestType.CONTRIBUTION: return 'text-red-400'
+    case QuestType.NETWORKING: return 'text-purple-400'
+    case QuestType.SKILL_BUILDING: return 'text-orange-400'
+    case QuestType.INTEGRATION: return 'text-indigo-400'
+    case QuestType.ONBOARDING: return 'text-cyan-400'
+    case QuestType.GEOMETRY: return 'text-pink-400'
     default: return 'text-gray-400'
   }
 }
@@ -410,15 +433,14 @@ const getCategoryColor = (type: QuestType): string => {
  * Get difficulty stars
  */
 const getDifficultyStars = (difficulty: QuestDifficulty): string => {
-  const levels = {
-    [QuestDifficulty.EASY]: 1,
-    [QuestDifficulty.MEDIUM]: 2,
-    [QuestDifficulty.HARD]: 3,
-    [QuestDifficulty.EXPERT]: 4,
-    [QuestDifficulty.LEGENDARY]: 5
+  const levels: Record<QuestDifficulty, number> = {
+    [QuestDifficulty.BEGINNER]: 1,
+    [QuestDifficulty.INTERMEDIATE]: 2,
+    [QuestDifficulty.ADVANCED]: 3,
+    [QuestDifficulty.EXPERT]: 4
   }
   const level = levels[difficulty] || 1
-  return '★'.repeat(level) + '☆'.repeat(5 - level)
+  return '★'.repeat(level) + '☆'.repeat(4 - level)
 }
 
 /**
@@ -679,21 +701,9 @@ watch(activeTab, () => {
               </div>
             </div>
             
-            <!-- Progress Bar (if quest is active) -->
-            <div v-if="quest.status === QuestStatus.ACTIVE && quest.progress !== undefined" class="quest-progress">
-              <div class="progress-bar">
-                <div 
-                  class="progress-fill"
-                  :class="getProgressColor(quest.progress)"
-                  :style="{ width: quest.progress + '%' }"
-                ></div>
-              </div>
-              <span class="progress-text">{{ Math.round(quest.progress) }}% Complete</span>
-            </div>
-            
             <!-- GitHub Issue Link -->
-            <div v-if="quest.githubUrl" class="github-link">
-              <a :href="quest.githubUrl" target="_blank" class="btn btn-ghost btn-sm">
+            <div v-if="quest.githubIssueUrl" class="github-link">
+              <a :href="quest.githubIssueUrl" target="_blank" class="btn btn-ghost btn-sm">
                 <span>🔗</span>
                 View on GitHub
               </a>
@@ -770,10 +780,6 @@ watch(activeTab, () => {
                 <span class="meta-label">XP Earned:</span>
                 <span class="meta-value text-primary">{{ quest.experienceReward }}</span>
               </div>
-              <div v-if="quest.completedAt" class="meta-item">
-                <span class="meta-label">Completed:</span>
-                <span class="meta-value">{{ new Date(quest.completedAt).toLocaleDateString() }}</span>
-              </div>
             </div>
             
             <div class="quest-actions">
@@ -828,10 +834,10 @@ watch(activeTab, () => {
               </div>
             </div>
             
-            <div v-if="quest.githubUrl" class="github-details">
+            <div v-if="quest.githubIssueUrl" class="github-details">
               <div class="repo-info">
                 <strong>GitHub Issue:</strong> 
-                <a :href="quest.githubUrl" target="_blank" class="github-link-text">
+                <a :href="quest.githubIssueUrl" target="_blank" class="github-link-text">
                   View Issue
                 </a>
               </div>
@@ -839,8 +845,8 @@ watch(activeTab, () => {
             
             <div class="quest-actions">
               <a 
-                v-if="quest.githubUrl"
-                :href="quest.githubUrl" 
+                v-if="quest.githubIssueUrl"
+                :href="quest.githubIssueUrl" 
                 target="_blank" 
                 class="btn btn-primary"
               >
@@ -897,9 +903,9 @@ watch(activeTab, () => {
               </div>
             </div>
             
-            <div v-if="selectedQuest.githubUrl" class="github-section">
+            <div v-if="selectedQuest.githubIssueUrl" class="github-section">
               <h3>GitHub Integration</h3>
-              <a :href="selectedQuest.githubUrl" target="_blank" class="github-link-full">
+              <a :href="selectedQuest.githubIssueUrl" target="_blank" class="github-link-full">
                 🔗 View GitHub Issue
               </a>
             </div>

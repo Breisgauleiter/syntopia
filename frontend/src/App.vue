@@ -1,13 +1,42 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
+import { ref } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { onMounted } from 'vue'
+import QuestPanel from '@/components/quests/QuestPanel.vue'
+import QuestTracker from '@/components/quests/QuestTracker.vue'
+import QuestHUD from '@/components/quests/QuestHUD.vue'
+import QuestNotification from '@/components/quests/QuestNotification.vue'
 
 const userStore = useUserStore()
+
+// Quest notification state
+const questNotification = ref<any>(null)
+
+const showQuestNotification = (notification: any) => {
+  questNotification.value = notification
+}
+
+const dismissQuestNotification = () => {
+  questNotification.value = null
+}
 
 onMounted(() => {
   // Check for authenticated user on app load
   userStore.checkAuthStatus()
+  
+  // Example: Show welcome notification for new users
+  if (userStore.isAuthenticated && userStore.user) {
+    setTimeout(() => {
+      showQuestNotification({
+        id: 'welcome',
+        type: 'accepted',
+        title: 'Welcome to Syntopia!',
+        message: 'Your quest system is now active. Check your quest panel for available adventures.',
+        duration: 4000
+      })
+    }, 2000)
+  }
 })
 </script>
 
@@ -56,6 +85,24 @@ onMounted(() => {
     <main class="main-content">
       <RouterView />
     </main>
+
+    <!-- Quest System Components (only show when authenticated) -->
+    <template v-if="userStore.isAuthenticated">
+      <!-- Quest HUD - Shows current quest objectives -->
+      <QuestHUD />
+      
+      <!-- Quest Panel - Draggable quest management -->
+      <QuestPanel />
+      
+      <!-- Quest Tracker - Side panel for quest tracking -->
+      <QuestTracker />
+      
+      <!-- Quest Notifications - Toast notifications for quest events -->
+      <QuestNotification 
+        :notification="questNotification"
+        @dismiss="dismissQuestNotification"
+      />
+    </template>
 
     <!-- Footer -->
     <footer class="app-footer">

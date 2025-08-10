@@ -2,6 +2,8 @@ package com.syntopia.repository;
 
 import com.syntopia.model.UserQuest;
 import com.arangodb.springframework.repository.ArangoRepository;
+import com.arangodb.springframework.annotation.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
@@ -19,28 +21,33 @@ import java.util.Optional;
 public interface UserQuestRepository extends ArangoRepository<UserQuest, String> {
 
     // ===============================
-    // User-specific Quest Queries
+    // User-specific Quest Queries  
     // ===============================
 
     /**
      * Find all quests for a specific user
+     * Note: Using AQL queries because @From/@To references require graph traversal
      */
-    List<UserQuest> findByUserId(String userId);
+    @Query("FOR uq IN user_quests FILTER uq._from == CONCAT('users/', @userId) RETURN uq")
+    List<UserQuest> findByUserId(@Param("userId") String userId);
 
     /**
      * Find all users working on a specific quest
      */
-    List<UserQuest> findByQuestId(String questId);
+    @Query("FOR uq IN user_quests FILTER uq._to == CONCAT('quests/', @questId) RETURN uq")
+    List<UserQuest> findByQuestId(@Param("questId") String questId);
 
     /**
      * Find specific user-quest relationship
      */
-    Optional<UserQuest> findByUserIdAndQuestId(String userId, String questId);
+    @Query("FOR uq IN user_quests FILTER uq._from == CONCAT('users/', @userId) AND uq._to == CONCAT('quests/', @questId) RETURN uq")
+    Optional<UserQuest> findByUserIdAndQuestId(@Param("userId") String userId, @Param("questId") String questId);
 
     /**
      * Find user's quests by status
      */
-    List<UserQuest> findByUserIdAndStatus(String userId, UserQuest.UserQuestStatus status);
+    @Query("FOR uq IN user_quests FILTER uq._from == CONCAT('users/', @userId) AND uq.status == @status RETURN uq")
+    List<UserQuest> findByUserIdAndStatus(@Param("userId") String userId, @Param("status") UserQuest.UserQuestStatus status);
 
     /**
      * Find user's active quests

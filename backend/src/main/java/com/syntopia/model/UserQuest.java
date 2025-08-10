@@ -22,15 +22,13 @@ public class UserQuest {
     private String id;
 
     @From
-    private String userId; // Points to User document
+    private User user; // Points to User document
 
     @To  
-    private String questId; // Points to Quest document
+    private Quest quest; // Points to Quest document
 
     private UserQuestStatus status; // USER_AVAILABLE, USER_ACTIVE, USER_COMPLETED, USER_ABANDONED
 
-    // Include quest data for convenience (not stored in database, populated by service)
-    private transient Quest quest;
     private int progress; // Progress percentage (0-100)
     private Map<String, Object> progressData; // Flexible progress tracking data
 
@@ -75,9 +73,9 @@ public class UserQuest {
     // Constructors
     public UserQuest() {}
 
-    public UserQuest(String userId, String questId) {
-        this.userId = userId;
-        this.questId = questId;
+    public UserQuest(User user, Quest quest) {
+        this.user = user;
+        this.quest = quest;
         this.status = UserQuestStatus.USER_AVAILABLE;
         this.progress = 0;
         this.acceptedAt = LocalDateTime.now();
@@ -92,20 +90,12 @@ public class UserQuest {
         this.id = id;
     }
 
-    public String getUserId() {
-        return userId;
+    public User getUser() {
+        return user;
     }
 
-    public void setUserId(String userId) {
-        this.userId = userId;
-    }
-
-    public String getQuestId() {
-        return questId;
-    }
-
-    public void setQuestId(String questId) {
-        this.questId = questId;
+    public void setUser(User user) {
+        this.user = user;
     }
 
     public UserQuestStatus getStatus() {
@@ -265,8 +255,8 @@ public class UserQuest {
     public String toString() {
         return "UserQuest{" +
                 "id='" + id + '\'' +
-                ", userId='" + userId + '\'' +
-                ", questId='" + questId + '\'' +
+                ", user=" + (user != null ? user.getId() : "null") +
+                ", quest=" + (quest != null ? quest.getId() : "null") +
                 ", status=" + status +
                 ", progress=" + progress +
                 ", completedAt=" + completedAt +

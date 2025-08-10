@@ -138,12 +138,11 @@ public class QuestService {
                 userQuest = existingUserQuest.get();
             } else {
                 // Create new UserQuest relationship for available quest
-                userQuest = new UserQuest(userId, quest.getId());
+                userQuest = new UserQuest(user, quest);
                 userQuest.setStatus(UserQuest.UserQuestStatus.USER_AVAILABLE);
             }
             
-            // Add quest data to the UserQuest for frontend convenience
-            userQuest.setQuest(quest);
+            // Quest data is already populated via the @To relationship
             userQuests.add(userQuest);
         }
         
@@ -200,14 +199,13 @@ public class QuestService {
             }
         } else {
             // Create new UserQuest relationship
-            userQuest = new UserQuest(userId, questId);
+            userQuest = new UserQuest(user, quest);
             userQuest.markAsStarted();
         }
 
         UserQuest savedUserQuest = userQuestRepository.save(userQuest);
         
-        // Load quest data for frontend
-        savedUserQuest.setQuest(quest);
+        // Quest data is already populated via the @To relationship
         
         return savedUserQuest;
     }
