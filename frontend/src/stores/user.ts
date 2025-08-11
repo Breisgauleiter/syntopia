@@ -29,11 +29,24 @@ export const useUserStore = defineStore('user', () => {
   const token = ref<string | null>(localStorage.getItem('syntopia_token'))
   const isLoading = ref(false)
   const error = ref<string | null>(null)
+  const authInitialized = ref(false) // Track if initial auth check is complete
+  const authCheckInProgress = ref(false) // Prevent concurrent auth checks
 
   // Getters
   const isAuthenticated = computed(() => {
-    const authenticated = !!user.value && !!token.value
-    console.log('isAuthenticated check:', authenticated, 'user:', !!user.value, 'token:', !!token.value)
+    const hasUser = !!user.value
+    const hasToken = !!token.value
+    const hasStoredToken = !!localStorage.getItem('syntopia_token')
+    const authenticated = hasUser && (hasToken || hasStoredToken)
+    
+    console.log('isAuthenticated check:', {
+      authenticated,
+      hasUser,
+      hasToken,
+      hasStoredToken,
+      userValue: user.value?.username || 'none'
+    })
+    
     return authenticated
   })
   const userLevel = computed(() => user.value?.currentLevel || 1)
@@ -54,6 +67,7 @@ export const useUserStore = defineStore('user', () => {
   const clearAuthData = () => {
     user.value = null
     token.value = null
+    authInitialized.value = false
     localStorage.removeItem('syntopia_token')
     localStorage.removeItem('syntopia_refresh_token')
     delete axios.defaults.headers.common['Authorization']
@@ -68,6 +82,7 @@ export const useUserStore = defineStore('user', () => {
       const response = await axios.post('/api/auth/login', credentials)
       console.log('Login successful:', response.data.user.username)
       setAuthData(response.data)
+      authInitialized.value = true
       return true
     } catch (err: any) {
       console.error('Login failed:', err.response?.data?.message || err.message)
@@ -108,13 +123,21 @@ export const useUserStore = defineStore('user', () => {
     username: string
     email: string
     displayName: string
+    password: string
   }) => {
     isLoading.value = true
     error.value = null
     
     try {
-      const response = await axios.post('/api/auth/register', userData)
-      setAuthData(response.data)
+      // Send registration with password
+      await axios.post('/api/auth/register', userData)
+      // Immediately login to obtain tokens
+  const loginPayload: { username?: string; email?: string; password: string } = { password: userData.password }
+      // Prefer username if provided
+      if (userData.username) loginPayload.username = userData.username
+      if (userData.email) loginPayload.email = userData.email
+      const loginRes = await axios.post('/api/auth/login', loginPayload)
+      setAuthData(loginRes.data)
       return true
     } catch (err: any) {
       error.value = err.response?.data?.message || 'Registration failed'
@@ -131,35 +154,64 @@ export const useUserStore = defineStore('user', () => {
   }
 
   const checkAuthStatus = async () => {
+    // Prevent concurrent auth checks
+    if (authCheckInProgress.value) {
+      console.log('🔄 Auth check already in progress, waiting...')
+      // Wait for the ongoing check to complete
+      while (authCheckInProgress.value) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      return
+    }
+    
+    authCheckInProgress.value = true
+    
     const storedToken = localStorage.getItem('syntopia_token')
-    console.log('Checking auth status, stored token exists:', !!storedToken)
+    console.log('🔍 Checking auth status, stored token exists:', !!storedToken)
     
     if (!storedToken) {
-      console.log('No stored token, clearing auth data')
+      console.log('❌ No stored token, clearing auth data')
       clearAuthData()
+      authInitialized.value = true
+      authCheckInProgress.value = false
       return
     }
     
     // Set token if not already set
     if (!token.value) {
       token.value = storedToken
-      console.log('Set token from localStorage')
+      console.log('📝 Set token from localStorage')
     }
     
     try {
+      // Make sure axios has the auth header set
       axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`
-      console.log('Making /api/auth/me request...')
-      const response = await axios.get('/api/auth/me')
-      user.value = response.data
-      console.log('Auth check successful, user:', response.data.username)
+      console.log('🚀 Making /api/auth/me request with token:', storedToken.substring(0, 20) + '...')
       
-      // Ensure token is set correctly
-      if (!token.value) {
-        token.value = storedToken
+      const response = await axios.get('/api/auth/me')
+      
+      // Set both user and token from the response
+      user.value = response.data
+      token.value = storedToken  // Make sure token is set
+      
+      console.log('✅ Auth check successful, user:', response.data.username, 'token set:', !!token.value)
+      
+    } catch (err: any) {
+      console.warn('⚠️ Auth check failed - Status:', err.response?.status, 'Message:', err.response?.data?.message || err.message)
+      
+      // Only clear auth data if it's a 401 (invalid token) or 403 (forbidden)
+      // Don't clear on network errors or other temporary issues
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        console.log('🗑️ Clearing invalid token due to 401/403')
+        clearAuthData()
+      } else {
+        console.log('🤔 Keeping token, might be temporary network issue')
+        // Keep the user logged in for non-auth errors
+        authInitialized.value = true
       }
-    } catch (err) {
-      console.warn('Auth check failed, clearing invalid token:', err)
-      clearAuthData()
+    } finally {
+      authInitialized.value = true
+      authCheckInProgress.value = false
     }
   }
 
@@ -224,6 +276,8 @@ export const useUserStore = defineStore('user', () => {
     token,
     isLoading,
     error,
+    authInitialized,
+    authCheckInProgress,
     
     // Getters
     isAuthenticated,

@@ -54,11 +54,15 @@ const loadPrimaryQuest = async () => {
 }
 
 watch(() => userStore.user?.id, () => {
-  if (userStore.user?.id) loadPrimaryQuest()
+  if (userStore.authInitialized && userStore.user?.id) loadPrimaryQuest()
+})
+
+watch(() => userStore.authInitialized, () => {
+  if (userStore.authInitialized && userStore.user?.id) loadPrimaryQuest()
 })
 
 onMounted(() => {
-  if (userStore.user?.id) loadPrimaryQuest()
+  if (userStore.authInitialized && userStore.user?.id) loadPrimaryQuest()
 })
 </script>
 

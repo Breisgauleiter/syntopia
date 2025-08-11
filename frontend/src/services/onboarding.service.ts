@@ -40,6 +40,8 @@ export interface OnboardingProgress {
   synPrinciplesUnderstood: string[]
   onboardingStartedAt: Date
   lastActivityAt: Date
+  onboardingCompleted?: boolean
+  onboardingCompletedAt?: Date
 }
 
 export interface QuestCompletionResult {
@@ -59,12 +61,87 @@ const api = axios.create({
   }
 })
 
+// Attach Authorization header if token exists
+api.interceptors.request.use((config) => {
+  try {
+    const token = localStorage.getItem('syntopia_token')
+    if (token) {
+      config.headers = config.headers || {}
+      ;(config.headers as any)['Authorization'] = `Bearer ${token}`
+    }
+  } catch {}
+  return config
+})
+
 export interface OnboardingQuestFilter {
   role?: string
   level?: number
 }
 
 export class OnboardingService {
+  private static STORAGE_KEY_PREFIX = 'onboarding_progress:'
+  private static XP_REQUIREMENTS = [100, 200, 300, 500]
+  
+  private static getStorageKey(userId: string) {
+    return `${this.STORAGE_KEY_PREFIX}${userId}`
+  }
+
+  /**
+   * Accept/start the onboarding quest for a given role and level on the backend.
+   * Backend uses the authenticated user; we only need to send role and level.
+   */
+  static async accept(role: string, level: number): Promise<{ success: boolean; message?: string }> {
+    try {
+      const response = await api.post('/accept', { role, level })
+      return response.data || { success: true }
+    } catch (error) {
+      console.error('Error accepting onboarding quest:', error)
+      // Return a non-throwing result so UX can still navigate; caller can decide to ignore
+      return { success: false, message: 'Failed to accept onboarding quest' }
+    }
+  }
+  
+  private static defaultProgress(userId: string): OnboardingProgress {
+    const now = new Date()
+    return {
+      userId,
+      currentLevel: 1,
+      currentXP: 0,
+      completedQuests: [],
+      selectedRole: null,
+      isGitHubConnected: false,
+      synPrinciplesUnderstood: [],
+      onboardingStartedAt: now,
+      lastActivityAt: now,
+      onboardingCompleted: false
+    }
+  }
+  
+  private static loadProgress(userId: string): OnboardingProgress {
+    try {
+      const raw = localStorage.getItem(this.getStorageKey(userId))
+      if (!raw) return this.defaultProgress(userId)
+      const parsed = JSON.parse(raw)
+      return {
+        ...this.defaultProgress(userId),
+        ...parsed,
+      }
+    } catch {
+      return this.defaultProgress(userId)
+    }
+  }
+  
+  private static saveProgress(userId: string, patch: Partial<OnboardingProgress>): OnboardingProgress {
+    const current = this.loadProgress(userId)
+    const updated: OnboardingProgress = {
+      ...current,
+      ...patch,
+      userId,
+      lastActivityAt: new Date()
+    }
+    localStorage.setItem(this.getStorageKey(userId), JSON.stringify(updated))
+    return updated
+  }
   
   /**
    * Get all onboarding quests for all roles and levels 1-4
@@ -169,44 +246,20 @@ export class OnboardingService {
    * Get user's current onboarding progress
    */
   static async getUserOnboardingProgress(userId: string): Promise<OnboardingProgress> {
-    // This would typically connect to user service
-    // For now, return mock data structure
-    return {
-      userId,
-      currentLevel: 1,
-      currentXP: 0,
-      completedQuests: [],
-      selectedRole: null,
-      isGitHubConnected: false,
-      synPrinciplesUnderstood: [],
-      onboardingStartedAt: new Date(),
-      lastActivityAt: new Date()
-    }
+    // TODO: Replace with backend persistence when available
+    return this.loadProgress(userId)
   }
   
   /**
    * Update user's onboarding progress
    */
   static async updateOnboardingProgress(userId: string, progress: Partial<OnboardingProgress>): Promise<OnboardingProgress> {
-    // This would typically connect to user service
-    // For now, simulate progress update
     console.log(`Updating onboarding progress for user ${userId}:`, progress)
-    
-    // Simulate API call delay
     return new Promise(resolve => {
       setTimeout(() => {
-        resolve({
-          userId,
-          currentLevel: progress.currentLevel || 1,
-          currentXP: progress.currentXP || 0,
-          completedQuests: progress.completedQuests || [],
-          selectedRole: progress.selectedRole || null,
-          isGitHubConnected: progress.isGitHubConnected || false,
-          synPrinciplesUnderstood: progress.synPrinciplesUnderstood || [],
-          onboardingStartedAt: new Date(),
-          lastActivityAt: new Date()
-        })
-      }, 500)
+        const updated = this.saveProgress(userId, progress)
+        resolve(updated)
+      }, 200)
     })
   }
   
@@ -214,22 +267,38 @@ export class OnboardingService {
    * Mark a quest as completed and award XP
    */
   static async completeQuest(userId: string, questId: string): Promise<QuestCompletionResult> {
-    // This would typically connect to user service and quest service
-    // For now, simulate quest completion
     console.log(`Completing quest ${questId} for user ${userId}`)
-    
+    const progress = this.loadProgress(userId)
+    const xpAwarded = 100
+    const currentLevelIndex = Math.max(0, Math.min(progress.currentLevel - 1, this.XP_REQUIREMENTS.length - 1))
+    const requirement = this.XP_REQUIREMENTS[currentLevelIndex]
+    const newTotalXP = (progress.currentXP || 0) + xpAwarded
+    let isLevelUp = false
+    let newLevel = progress.currentLevel
+    if (newTotalXP >= requirement) {
+      isLevelUp = true
+      newLevel = progress.currentLevel + 1
+    }
+    const onboardingCompleted = newLevel > 4
+    const updated = this.saveProgress(userId, {
+      currentXP: newTotalXP,
+      currentLevel: newLevel,
+      completedQuests: Array.from(new Set([...(progress.completedQuests || []), questId])),
+      onboardingCompleted,
+      onboardingCompletedAt: onboardingCompleted ? new Date() : progress.onboardingCompletedAt
+    })
     return new Promise(resolve => {
       setTimeout(() => {
         resolve({
           questId,
-          xpAwarded: 100, // This should come from quest data
-          newLevel: 1,
-          newTotalXP: 100,
-          isLevelUp: false,
+          xpAwarded,
+          newLevel: updated.currentLevel,
+          newTotalXP: updated.currentXP,
+          isLevelUp,
           unlockedFeatures: [],
           completedAt: new Date()
         })
-      }, 1000)
+      }, 400)
     })
   }
   
@@ -277,6 +346,8 @@ export interface OnboardingProgress {
   synPrinciplesUnderstood: string[]
   onboardingStartedAt: Date
   lastActivityAt: Date
+  onboardingCompleted?: boolean
+  onboardingCompletedAt?: Date
 }
 
 export interface QuestCompletionResult {

@@ -266,6 +266,74 @@ public class QuestService {
     }
 
     /**
+     * Get active quests for a user
+     */
+    public List<UserQuest> getActiveQuestsForUser(String userId) {
+        return userQuestRepository.findActiveQuestsByUser(userId);
+    }
+
+    /**
+     * Get completed quests for a user
+     */
+    public List<UserQuest> getCompletedQuestsForUser(String userId) {
+        return userQuestRepository.findCompletedQuestsByUser(userId);
+    }
+
+    /**
+     * Update quest progress for a user
+     */
+    public UserQuest updateQuestProgress(String userId, String questId, Map<String, Object> progressUpdate) {
+        UserQuest userQuest = userQuestRepository.findByUserIdAndQuestId(userId, questId)
+                .orElseThrow(() -> new IllegalArgumentException("User quest relationship not found"));
+
+        if (!userQuest.isActive()) {
+            throw new IllegalArgumentException("Quest is not active and progress cannot be updated");
+        }
+
+        // Extract progress data from update
+        if (progressUpdate.containsKey("progress")) {
+            Object progressValue = progressUpdate.get("progress");
+            if (progressValue instanceof Number) {
+                int newProgress = ((Number) progressValue).intValue();
+                
+                // Validate progress is not negative and not exceeding 100%
+                if (newProgress < 0) {
+                    throw new IllegalArgumentException("Progress cannot be negative");
+                }
+                if (newProgress > 100) {
+                    newProgress = 100; // Cap at 100%
+                }
+                
+                userQuest.setProgress(newProgress);
+            }
+        }
+
+        // Update progress data if provided (this includes notes and milestones)
+        if (progressUpdate.containsKey("progressData")) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> progressData = (Map<String, Object>) progressUpdate.get("progressData");
+            userQuest.setProgressData(progressData);
+        }
+
+        // Update completion notes if provided
+        if (progressUpdate.containsKey("notes")) {
+            userQuest.setCompletionNotes((String) progressUpdate.get("notes"));
+        }
+
+        // Set last progress update time
+        userQuest.setLastProgressUpdate(LocalDateTime.now());
+
+        UserQuest savedUserQuest = userQuestRepository.save(userQuest);
+
+        // Load quest data for frontend
+        Quest quest = questRepository.findById(questId)
+                .orElseThrow(() -> new IllegalArgumentException("Quest not found: " + questId));
+        savedUserQuest.setQuest(quest);
+
+        return savedUserQuest;
+    }
+
+    /**
      * Get user's quest progress and statistics
      */
     public Map<String, Object> getUserQuestStatistics(String userId) {
@@ -616,6 +684,42 @@ public class QuestService {
         quest.getMetadata().put("isOnboardingQuest", true);
         
         return quest;
+    }
+
+    /**
+     * Ensure the onboarding quest for a role/level exists and mark it active for the user (creates UserQuest edge)
+     */
+    public UserQuest acceptOnboardingQuestForUser(String userId, String role, int level) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+
+        // Try to find existing quest
+        List<Quest> matches = questRepository.findByRoleAndRequiredLevelAndStatus(role, level, Quest.QuestStatus.AVAILABLE);
+        Quest quest;
+        if (!matches.isEmpty()) {
+            quest = matches.get(0);
+        } else {
+            // Generate and save if missing
+            String displayRole = mapRoleToDisplayName(role);
+            OnboardingQuest ob = onboardingQuestGenerator.generateQuestForRoleAndLevel(displayRole, level);
+            quest = convertOnboardingQuestToQuest(ob, role, level);
+            quest = questRepository.save(quest);
+        }
+
+        // Create or update UserQuest relation to ACTIVE
+        Optional<UserQuest> existing = userQuestRepository.findByUserIdAndQuestId(userId, quest.getId());
+        UserQuest userQuest;
+        if (existing.isPresent()) {
+            userQuest = existing.get();
+            if (!userQuest.isActive()) {
+                userQuest.markAsStarted();
+            }
+        } else {
+            userQuest = new UserQuest(user, quest);
+            userQuest.markAsStarted();
+        }
+
+        return userQuestRepository.save(userQuest);
     }
 
     /**

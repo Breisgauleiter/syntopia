@@ -1,7 +1,11 @@
 package com.syntopia.service;
 
+import com.syntopia.dto.CommunityDTO;
 import com.syntopia.model.User;
 import com.syntopia.repository.UserRepository;
+import com.syntopia.repository.UserCollaborationRepository;
+import com.syntopia.repository.UserProjectRepository;
+import com.syntopia.repository.UserQuestRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -11,67 +15,63 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Random;
 import java.util.stream.Collectors;
 
 /**
  * CommunityService - Business logic for Community Features
+ * Now with real ArangoDB-backed data instead of mocks
  */
 @Service
 public class CommunityService {
 
     @Autowired
     private UserRepository userRepository;
+    
+    @Autowired
+    private UserCollaborationRepository userCollaborationRepository;
+    
+    @Autowired
+    private UserProjectRepository userProjectRepository;
+    
+    @Autowired
+    private UserQuestRepository userQuestRepository;
 
     /**
-     * Get community activity feed
+     * Get community activity feed with real data from DB
      */
     public Map<String, Object> getCommunityFeed(String userId, int page, int size) {
         try {
-            // Get recent quest completions for activity feed
-            List<Map<String, Object>> activities = new ArrayList<>();
+            List<Map<String, Object>> feedItems = new ArrayList<>();
             
-            // Get all users for demo activity
-            List<User> users = new ArrayList<>();
-            userRepository.findAll().forEach(users::add);
+            // Get recent quest completions (last 7 days)
+            List<Map<String, Object>> questCompletions = userQuestRepository.findRecentCompletedQuests(7, size / 3);
+            feedItems.addAll(questCompletions);
             
-            // Create sample activities from user data
-            for (User user : users.subList(0, Math.min(users.size(), 10))) {
-                if (!user.getId().equals(userId)) {
-                    Map<String, Object> activity = new HashMap<>();
-                    activity.put("id", "activity_" + user.getId());
-                    activity.put("type", "quest_completion");
-                    activity.put("userId", user.getId());
-                    activity.put("user", Map.of(
-                        "id", user.getId(),
-                        "displayName", user.getDisplayName(),
-                        "profilePictureUrl", user.getProfilePictureUrl(),
-                        "currentLevel", user.getCurrentLevel(),
-                        "selectedRole", user.getSelectedRole()
-                    ));
-                    activity.put("questTitle", "Sample Quest: " + user.getSelectedRole() + " Training");
-                    activity.put("questType", user.getSelectedRole() != null ? user.getSelectedRole().toLowerCase() : "general");
-                    activity.put("experienceReward", 50);
-                    activity.put("timestamp", LocalDateTime.now().minusHours(new Random().nextInt(24)));
-                    activities.add(activity);
-                }
-            }
+            // Get recent projects (last 7 days)
+            List<Map<String, Object>> newProjects = userProjectRepository.findRecentProjects(7, size / 3);
+            feedItems.addAll(newProjects);
             
-            // Sort by timestamp
-            activities.sort((a, b) -> 
-                ((LocalDateTime) b.get("timestamp")).compareTo((LocalDateTime) a.get("timestamp"))
-            );
+            // Get recent connections (last 7 days)
+            List<Map<String, Object>> newConnections = userCollaborationRepository.findRecentAcceptedConnections(7, size / 3);
+            feedItems.addAll(newConnections);
+            
+            // Sort all items by timestamp descending
+            feedItems.sort((a, b) -> {
+                LocalDateTime timeA = (LocalDateTime) a.get("timestamp");
+                LocalDateTime timeB = (LocalDateTime) b.get("timestamp");
+                return timeB.compareTo(timeA);
+            });
             
             // Apply pagination
             int start = page * size;
-            int end = Math.min(start + size, activities.size());
-            List<Map<String, Object>> paginatedActivities = 
-                start < activities.size() ? activities.subList(start, end) : new ArrayList<>();
+            int end = Math.min(start + size, feedItems.size());
+            List<Map<String, Object>> paginatedItems = 
+                start < feedItems.size() ? feedItems.subList(start, end) : new ArrayList<>();
             
             Map<String, Object> result = new HashMap<>();
-            result.put("activities", paginatedActivities);
-            result.put("totalCount", activities.size());
-            result.put("hasMore", end < activities.size());
+            result.put("activities", paginatedItems);
+            result.put("totalCount", feedItems.size());
+            result.put("hasMore", end < feedItems.size());
             return result;
         } catch (Exception e) {
             throw new RuntimeException("Error loading community feed: " + e.getMessage(), e);
@@ -142,16 +142,20 @@ public class CommunityService {
     }
 
     /**
-     * Get user connections (mock implementation)
+     * Get user connections with real data
      */
-    public Map<String, Object> getUserConnections(String userId) {
+    public Map<String, Object> getUserConnections(String userId, String status, String direction, int page, int size) {
         try {
-            List<Map<String, Object>> pendingRequests = new ArrayList<>();
-            List<Map<String, Object>> acceptedConnections = new ArrayList<>();
+            int offset = page * size;
+            List<Map<String, Object>> connections = userCollaborationRepository.findConnectionsWithUserDetails(
+                userId, status, direction, offset, size);
+            
+            Integer totalCount = userCollaborationRepository.countConnections(userId, status, direction);
             
             Map<String, Object> result = new HashMap<>();
-            result.put("pending", pendingRequests);
-            result.put("accepted", acceptedConnections);
+            result.put("connections", connections);
+            result.put("totalCount", totalCount != null ? totalCount : 0);
+            result.put("hasMore", (offset + size) < (totalCount != null ? totalCount : 0));
             return result;
         } catch (Exception e) {
             throw new RuntimeException("Error loading user connections: " + e.getMessage(), e);
@@ -159,186 +163,189 @@ public class CommunityService {
     }
 
     /**
-     * Join project collaboration (mock implementation)
+     * Send connection request with real persistence
      */
-
-    /**
-     * Join project collaboration (mock implementation)
-     */
-    public Map<String, Object> joinProjectCollaboration(String userId, String projectId, String role) {
+    public Map<String, Object> sendConnectionRequest(String fromUserId, String toUserId, String connectionType) {
         try {
-            Map<String, Object> result = new HashMap<>();
-            result.put("success", true);
-            result.put("message", "Successfully joined project collaboration");
-            return result;
+            // Validate users exist
+            Optional<User> fromUser = userRepository.findById(fromUserId);
+            Optional<User> toUser = userRepository.findById(toUserId);
+            
+            if (fromUser.isEmpty() || toUser.isEmpty()) {
+                throw new RuntimeException("One or both users not found");
+            }
+            
+            // Prevent self-connection
+            if (fromUserId.equals(toUserId)) {
+                throw new RuntimeException("Cannot connect to yourself");
+            }
+            
+            // Check if connection already exists
+            List<Map<String, Object>> existing = userCollaborationRepository.findExistingConnection(fromUserId, toUserId);
+            if (!existing.isEmpty()) {
+                throw new RuntimeException("Connection already exists between these users");
+            }
+            
+            // Create the connection
+            Map<String, Object> connection = userCollaborationRepository.createConnection(fromUserId, toUserId, connectionType);
+            
+            return connection;
         } catch (Exception e) {
-            throw new RuntimeException("Error joining project: " + e.getMessage(), e);
+            throw new RuntimeException("Error sending connection request: " + e.getMessage(), e);
         }
     }
 
     /**
-     * Get community leaderboard
+     * Respond to connection request (accept/decline)
      */
-    public Map<String, Object> getCommunityLeaderboard(String period, int page, int size) {
+    public Map<String, Object> respondToConnectionRequest(String connectionId, String action, String respondingUserId) {
         try {
-            List<User> users = new ArrayList<>();
-            userRepository.findAll().forEach(users::add);
+            // Validate action
+            if (!"accept".equals(action) && !"decline".equals(action)) {
+                throw new RuntimeException("Invalid action. Must be 'accept' or 'decline'");
+            }
             
-            // Create leaderboard entries with calculated scores
-            List<Map<String, Object>> leaderboardEntries = users.stream()
-                .map(user -> {
-                    Map<String, Object> entry = new HashMap<>();
-                    entry.put("userId", user.getId());
-                    entry.put("user", Map.of(
-                        "id", user.getId(),
-                        "displayName", user.getDisplayName(),
-                        "profilePictureUrl", user.getProfilePictureUrl(),
-                        "currentLevel", user.getCurrentLevel(),
-                        "selectedRole", user.getSelectedRole()
-                    ));
-                    
-                    // Calculate score based on experience and level
-                    long score = user.getExperiencePoints() + (user.getCurrentLevel() * 100L);
-                    entry.put("score", score);
-                    
-                    return entry;
-                })
-                .sorted((a, b) -> Long.compare((Long) b.get("score"), (Long) a.get("score")))
-                .collect(Collectors.toList());
+            String status = "accept".equals(action) ? "ACCEPTED" : "DECLINED";
+            Map<String, Object> updatedConnection = userCollaborationRepository.updateConnectionStatus(connectionId, status);
             
-            // Apply pagination
-            int start = page * size;
-            int end = Math.min(start + size, leaderboardEntries.size());
-            List<Map<String, Object>> paginatedEntries = 
-                start < leaderboardEntries.size() ? leaderboardEntries.subList(start, end) : new ArrayList<>();
+            return updatedConnection;
+        } catch (Exception e) {
+            throw new RuntimeException("Error responding to connection request: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get community projects with real data
+     */
+    public Map<String, Object> getCommunityProjects(String userId, boolean mine, int page, int size) {
+        try {
+            int offset = page * size;
+            List<Map<String, Object>> projects = userProjectRepository.listProjectsWithDetails(userId, mine, offset, size);
+            Integer totalCount = userProjectRepository.countProjects(userId, mine);
             
-            // Add rank to entries
-            for (int i = 0; i < paginatedEntries.size(); i++) {
-                paginatedEntries.get(i).put("rank", start + i + 1);
+            Map<String, Object> result = new HashMap<>();
+            result.put("projects", projects);
+            result.put("totalCount", totalCount != null ? totalCount : 0);
+            result.put("hasMore", (offset + size) < (totalCount != null ? totalCount : 0));
+            return result;
+        } catch (Exception e) {
+            throw new RuntimeException("Error loading community projects: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Create new community project with real persistence
+     */
+    public Map<String, Object> createCommunityProject(String ownerId, CommunityDTO.CreateProjectDTO projectData) {
+        try {
+            // Validate required fields
+            if (projectData.getTitle() == null || projectData.getTitle().trim().isEmpty()) {
+                throw new RuntimeException("Project title is required");
+            }
+            if (projectData.getDescription() == null || projectData.getDescription().trim().isEmpty()) {
+                throw new RuntimeException("Project description is required");
+            }
+            
+            // Set defaults
+            String visibility = projectData.getVisibility() != null ? projectData.getVisibility() : "public";
+            String[] tags = projectData.getTags() != null ? 
+                projectData.getTags().toArray(new String[0]) : new String[0];
+            
+            // Create project with owner
+            Map<String, Object> project = userProjectRepository.createProjectWithOwner(
+                projectData.getTitle(), 
+                projectData.getDescription(), 
+                tags, 
+                visibility, 
+                ownerId
+            );
+            
+            return project;
+        } catch (Exception e) {
+            throw new RuntimeException("Error creating community project: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get community leaderboard with real aggregated data
+     */
+    public Map<String, Object> getCommunityLeaderboard(String window, int page, int size) {
+        try {
+            Integer windowDays = null;
+            if ("week".equals(window)) {
+                windowDays = 7;
+            } else if ("month".equals(window)) {
+                windowDays = 30;
+            }
+            
+            int offset = page * size;
+            List<Map<String, Object>> leaderboard = userQuestRepository.getLeaderboard(windowDays, offset, size);
+            
+            // Add rank to each entry
+            for (int i = 0; i < leaderboard.size(); i++) {
+                leaderboard.get(i).put("rank", offset + i + 1);
             }
             
             Map<String, Object> result = new HashMap<>();
-            result.put("leaderboard", paginatedEntries);
-            result.put("totalCount", leaderboardEntries.size());
-            result.put("hasMore", end < leaderboardEntries.size());
+            result.put("leaderboard", leaderboard);
+            result.put("hasMore", leaderboard.size() == size); // Simple approximation
             return result;
         } catch (Exception e) {
-            throw new RuntimeException("Error loading leaderboard: " + e.getMessage(), e);
+            throw new RuntimeException("Error loading community leaderboard: " + e.getMessage(), e);
         }
     }
 
-    // Helper methods
-    
+    /**
+     * Get community stats with real data
+     */
+    public Map<String, Object> getCommunityStats() {
+        try {
+            // Count users
+            long totalUsers = userRepository.count();
+            
+            // Count active users (users with quest activity in last 7 days)
+            List<Map<String, Object>> recentActivity = userQuestRepository.findRecentCompletedQuests(7, 1000);
+            long activeUsers7d = recentActivity.stream()
+                .map(activity -> ((Map<String, Object>) activity.get("user")).get("id"))
+                .distinct()
+                .count();
+            
+            // Count projects
+            Integer totalProjects = userProjectRepository.countProjects(null, false);
+            
+            // Count connections
+            Integer totalConnections = userCollaborationRepository.countConnections(null, "ACCEPTED", "all");
+            
+            // Count completed quests
+            Integer questsCompleted = userQuestRepository.countCompletedQuests();
+            
+            Map<String, Object> stats = new HashMap<>();
+            stats.put("users", totalUsers);
+            stats.put("activeUsers7d", activeUsers7d);
+            stats.put("projects", totalProjects != null ? totalProjects : 0);
+            stats.put("connections", totalConnections != null ? totalConnections : 0);
+            stats.put("questsCompleted", questsCompleted != null ? questsCompleted : 0);
+            
+            return stats;
+        } catch (Exception e) {
+            throw new RuntimeException("Error loading community stats: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Convert User entity to Map for API responses
+     */
     private Map<String, Object> convertUserToMap(User user) {
         Map<String, Object> userMap = new HashMap<>();
         userMap.put("id", user.getId());
-        userMap.put("displayName", user.getDisplayName());
         userMap.put("username", user.getUsername());
+        userMap.put("displayName", user.getDisplayName());
         userMap.put("profilePictureUrl", user.getProfilePictureUrl());
-        userMap.put("bio", user.getBio());
-        userMap.put("selectedRole", user.getSelectedRole());
         userMap.put("currentLevel", user.getCurrentLevel());
         userMap.put("experiencePoints", user.getExperiencePoints());
-        userMap.put("socialLinks", user.getSocialLinks());
-        
-        // Add stats
-        Map<String, Object> stats = new HashMap<>();
-        stats.put("questsCompleted", 0);
-        stats.put("connectionsCount", 0);
-        stats.put("projectsCount", 0);
-        userMap.put("stats", stats);
-        
+        userMap.put("selectedRole", user.getSelectedRole());
+        userMap.put("bio", user.getBio());
+        userMap.put("location", user.getLocation());
         return userMap;
-    }
-
-    /**
-     * Send connection request between users
-     */
-    public Map<String, Object> sendConnectionRequest(String fromUserId, String toUserId, String connectionType, String message) {
-        // Implementation using UserCollaborationRepository
-        // connectionType can be: "collaboration", "mentorship", "learning_buddy", "professional", "social"
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("message", "Connection request sent successfully");
-        result.put("connectionType", connectionType);
-        return result;
-    }
-
-    /**
-     * Respond to connection request
-     */
-    public Map<String, Object> respondToConnectionRequest(String requestId, String response) {
-        // Implementation using UserCollaborationRepository
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("message", "Connection request " + response + " successfully");
-        return result;
-    }
-
-    /**
-     * Invite collaboration
-     */
-    public Map<String, Object> inviteCollaboration(String fromUserId, String toUserId, String projectId, String role, String message) {
-        // Implementation using UserProjectRepository
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("message", "Collaboration invitation sent successfully");
-        return result;
-    }
-
-    /**
-     * Get community projects with filters
-     */
-    public Map<String, Object> getCommunityProjects(String skillFilter, int page, int size) {
-        // Implementation using ProjectRepository and UserProjectRepository
-        List<Map<String, Object>> projects = new ArrayList<>();
-        
-        // Sample project data
-        Map<String, Object> project = new HashMap<>();
-        project.put("id", "project_1");
-        project.put("title", "Sacred Geometry Art Installation");
-        project.put("description", "Community project to create digital sacred geometry art");
-        project.put("skillsNeeded", List.of("digital_art", "programming", "sacred_geometry"));
-        project.put("type", "art");
-        project.put("membersCount", 3);
-        project.put("maxMembers", 5);
-        projects.add(project);
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("projects", projects);
-        result.put("totalCount", projects.size());
-        result.put("hasMore", false);
-        return result;
-    }
-
-    /**
-     * Create community project
-     */
-    public Map<String, Object> createCommunityProject(String creatorId, String title, List<String> skillsNeeded, String description) {
-        // Implementation using ProjectRepository
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("projectId", "project_" + System.currentTimeMillis());
-        result.put("message", "Community project created successfully");
-        return result;
-    }
-
-    /**
-     * Get community stats
-     */
-    public Map<String, Object> getCommunityStats(String userId) {
-        Map<String, Object> stats = new HashMap<>();
-        stats.put("totalMembers", 150);
-        stats.put("activeProjects", 12);
-        stats.put("totalConnections", 89);
-        stats.put("questsCompleted", 45);
-        return stats;
-    }
-
-    /**
-     * Get community leaderboard
-     */
-    public Map<String, Object> getLeaderboard(String period, int page, int size) {
-        return getCommunityLeaderboard(period, page, size);
     }
 }

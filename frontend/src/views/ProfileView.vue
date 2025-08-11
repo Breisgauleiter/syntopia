@@ -328,7 +328,27 @@ const loadSocialData = async () => {
   try {
     const result = await profileService.getSocialConnections()
     if (result.success) {
-      socialData.value = result.data
+      const d: any = result.data || {}
+      const connections: any[] = Array.isArray(d.connections) ? d.connections : []
+
+      // Adapt backend shape to the view's expected structure
+      const collaborations = connections.map((c: any) => ({
+        status: c.status,
+        user: {
+          id: c.otherUser?.id,
+          displayName: c.otherUser?.displayName,
+          profilePictureUrl: c.otherUser?.avatarUrl,
+          selectedRole: c.otherUser?.selectedRole,
+          currentLevel: c.otherUser?.currentLevel
+        }
+      }))
+
+      socialData.value = {
+        connectionCount: d?.stats?.total ?? d?.totalConnections ?? connections.length ?? 0,
+        connections,
+        collaborations,
+        projects: Array.isArray(d.projects) ? d.projects : []
+      }
     }
   } catch (error) {
     console.error('Failed to load social data:', error)
@@ -339,7 +359,9 @@ const loadAchievements = async () => {
   try {
     const result = await profileService.getAchievements()
     if (result.success) {
-      achievements.value = result.data
+      // Backend returns an object with { achievements: [...], totalAchievements, completedAchievements }
+      const d: any = result.data || {}
+      achievements.value = Array.isArray(d.achievements) ? d.achievements : []
     }
   } catch (error) {
     console.error('Failed to load achievements:', error)
@@ -388,10 +410,13 @@ const saveSettings = async () => {
   try {
     saving.value = true
     
-    const result = await profileService.updateProfile({
+    const updateData = {
       displayName: editForm.value.displayName,
-      // bio: editForm.value.bio, // Bio will be handled separately if needed
-    })
+      bio: editForm.value.bio,
+      isProfilePublic: editForm.value.isProfilePublic
+    }
+    
+    const result = await profileService.updateProfile(updateData)
     
     if (result.success) {
       profile.value = { ...profile.value!, ...result.data }

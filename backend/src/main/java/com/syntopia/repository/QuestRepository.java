@@ -52,6 +52,12 @@ public interface QuestRepository extends ArangoRepository<Quest, String> {
             String role, int userLevel, Quest.QuestStatus status);
 
     /**
+     * Find a quest by exact role, exact required level and status
+     */
+    List<Quest> findByRoleAndRequiredLevelAndStatus(
+            String role, int level, Quest.QuestStatus status);
+
+    /**
      * Find GitHub quests
      */
     List<Quest> findByTypeAndGithubRepositoryNotNull(Quest.QuestType type);

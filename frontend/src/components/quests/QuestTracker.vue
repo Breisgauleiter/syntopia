@@ -26,7 +26,7 @@
       <!-- Active Quests Summary -->
       <div class="tracker-header">
         <div class="header-title">🎯 Active Quests</div>
-        <div class="quest-count">{{ activeQuests.length }}/{{ maxActiveQuests }}</div>
+  <div class="quest-count">{{ headerActiveCount }}/{{ maxActiveQuests }}</div>
       </div>
 
       <!-- Quest Navigation -->
@@ -52,8 +52,8 @@
         </div>
       </div>
 
-      <!-- Current Quest Display -->
-      <div v-if="currentQuest && currentQuest.quest" class="current-quest">
+  <!-- Current Quest Display -->
+  <div v-if="currentQuest && currentQuest.quest" class="current-quest">
         <!-- Quest Header -->
         <div class="quest-header">
           <div class="quest-icon">{{ getQuestIcon(currentQuest.quest.type) }}</div>
@@ -123,10 +123,31 @@
       </div>
 
       <!-- No Active Quests -->
-      <div v-else class="no-quests">
-        <div class="no-quests-icon">📋</div>
-        <div class="no-quests-text">No active quests</div>
-        <div class="no-quests-hint">Visit the Quest Panel to accept new quests!</div>
+  <div v-else class="no-quests">
+        <!-- Onboarding highlight when not completed -->
+        <div 
+          v-if="showOnboardingCard && nextOnboardingQuest"
+          class="onboarding-highlight"
+          @click="openOnboarding"
+        >
+          <div class="highlight-icon">🌟</div>
+          <div class="highlight-content">
+            <div class="highlight-title">Continue Onboarding</div>
+            <div class="highlight-quest-title">{{ nextOnboardingQuest.title }}</div>
+            <div class="highlight-description">{{ nextOnboardingQuest.description }}</div>
+            <div class="highlight-meta">
+              <span class="level-badge">Next step</span>
+              <span class="xp-badge">+{{ nextOnboardingQuest.xpReward }} XP</span>
+            </div>
+          </div>
+          <button class="highlight-cta" @click.stop="openOnboarding">Open</button>
+        </div>
+
+        <template v-if="!(showOnboardingCard && nextOnboardingQuest)">
+          <div class="no-quests-icon">📋</div>
+          <div class="no-quests-text">No active quests</div>
+          <div class="no-quests-hint">Visit the Quest Panel to accept new quests!</div>
+        </template>
       </div>
 
       <!-- Quick Stats -->
@@ -145,11 +166,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useUserStore } from '@/stores/user'
 import questService, { UserQuestStatus, QuestType, type UserQuest } from '@/services/quest.service'
+import OnboardingService, { type OnboardingQuest } from '@/services/onboarding.service'
+import { useRouter } from 'vue-router'
 
 const userStore = useUserStore()
+const router = useRouter()
 
 // Component state
 const isCollapsed = ref(false)
@@ -158,6 +182,9 @@ const userQuests = ref<UserQuest[]>([])
 const maxActiveQuests = ref(5)
 const completedQuestsCount = ref(0)
 const questStreak = ref(0)
+// Onboarding integration
+const showOnboardingCard = ref(false)
+const nextOnboardingQuest = ref<OnboardingQuest | null>(null)
 
 // Computed properties
 const activeQuests = computed(() => {
@@ -166,6 +193,13 @@ const activeQuests = computed(() => {
 
 const currentQuest = computed(() => {
   return activeQuests.value[currentQuestIndex.value] || null
+})
+
+// Count for header: if no active quests but onboarding card exists, count it as 1
+const headerActiveCount = computed(() => {
+  const count = activeQuests.value.length
+  if (count > 0) return count
+  return nextOnboardingQuest.value ? 1 : 0
 })
 
 // Quest utility functions
@@ -252,6 +286,20 @@ const toggleCollapsed = () => {
   isCollapsed.value = !isCollapsed.value
 }
 
+const openOnboarding = async () => {
+  try {
+    const role = userStore.user?.selectedRole
+    if (role && nextOnboardingQuest.value) {
+      await OnboardingService.accept(role, nextOnboardingQuest.value.level)
+      await loadUserQuests()
+    }
+  } catch (e) {
+    console.warn('Onboarding accept failed or skipped:', e)
+  } finally {
+    router.push('/onboarding')
+  }
+}
+
 // Quest actions
 const completeQuest = async (questId: string) => {
   try {
@@ -297,7 +345,7 @@ const loadUserQuests = async () => {
   if (!userStore.user?.id) return
   
   try {
-    const response = await questService.getUserQuests()
+    const response = await questService.getUserActiveQuests()
     if (response.success && response.data) {
       userQuests.value = response.data
       
@@ -312,20 +360,59 @@ const loadUserQuests = async () => {
   }
 }
 
+const loadNextOnboardingQuest = async () => {
+  if (!userStore.user?.id) return
+  try {
+    const progress = await OnboardingService.getUserOnboardingProgress(userStore.user.id)
+    if (progress.onboardingCompleted || progress.currentLevel >= 4) {
+      showOnboardingCard.value = false
+      nextOnboardingQuest.value = null
+      return
+    }
+    const role = userStore.user.selectedRole || progress.selectedRole || ''
+    if (!role) {
+      showOnboardingCard.value = false
+      nextOnboardingQuest.value = null
+      return
+    }
+    const recs = await OnboardingService.getQuestRecommendations(userStore.user.id, role)
+    nextOnboardingQuest.value = recs[0] || null
+    showOnboardingCard.value = !!nextOnboardingQuest.value
+  } catch (e) {
+    showOnboardingCard.value = false
+    nextOnboardingQuest.value = null
+  }
+}
+
 // Lifecycle hooks
 onMounted(() => {
-  if (userStore.user?.id) {
+  if (userStore.authInitialized && userStore.user?.id) {
     loadUserQuests()
+  loadNextOnboardingQuest()
     
     // Set up periodic refresh
     setInterval(loadUserQuests, 30000) // Refresh every 30 seconds
   }
+  // Refresh when onboarding is accepted elsewhere
+  window.addEventListener('onboardingAccepted', loadUserQuests)
 })
 
-// Watch for user changes
-watch(() => userStore.user?.id, (newUserId) => {
-  if (newUserId) {
+onUnmounted(() => {
+  window.removeEventListener('onboardingAccepted', loadUserQuests)
+})
+
+// Watch for user changes and auth initialization
+watch(() => userStore.authInitialized, () => {
+  if (userStore.authInitialized && userStore.user?.id) {
     loadUserQuests()
+  loadNextOnboardingQuest()
+  }
+})
+
+watch(() => userStore.user?.id, (newUserId) => {
+  if (userStore.authInitialized && newUserId) {
+    loadUserQuests()
+  loadNextOnboardingQuest()
   }
 })
 
@@ -337,6 +424,12 @@ watch(() => activeQuests.value.length, (newLength) => {
     currentQuestIndex.value = 0
   }
 })
+
+watch(() => userStore.user?.selectedRole, () => {
+  if (userStore.authInitialized && userStore.user?.id) {
+    loadNextOnboardingQuest()
+  }
+})
 </script>
 
 <style scoped>
@@ -346,13 +439,13 @@ watch(() => activeQuests.value.length, (newLength) => {
   right: 20px;
   transform: translateY(-50%);
   width: 280px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(12px);
-  border: 2px solid rgba(212, 175, 55, 0.3);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  box-shadow: var(--shadow-glass);
   z-index: 1000;
-  font-family: 'Cinzel', serif;
+  font-family: var(--font-sans);
   transition: all 0.3s ease;
   overflow: hidden;
 }
@@ -411,15 +504,15 @@ watch(() => activeQuests.value.length, (newLength) => {
 }
 
 .collapse-toggle {
-  background: linear-gradient(135deg, rgba(212, 175, 55, 0.1), rgba(241, 196, 15, 0.1));
+  background: rgba(255, 255, 255, 0.08);
   border: none;
-  border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
   width: 100%;
   padding: 12px;
   cursor: pointer;
-  font-family: 'Cinzel', serif;
+  font-family: var(--font-sans);
   font-weight: 600;
-  color: #2c3e50;
+  color: var(--color-text);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -461,12 +554,12 @@ watch(() => activeQuests.value.length, (newLength) => {
 .header-title {
   font-size: 16px;
   font-weight: 700;
-  color: #2c3e50;
+  color: var(--color-text);
 }
 
 .quest-count {
-  background: rgba(212, 175, 55, 0.1);
-  color: #d4af37;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
   padding: 4px 8px;
   border-radius: 6px;
   font-size: 12px;
@@ -482,20 +575,20 @@ watch(() => activeQuests.value.length, (newLength) => {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  background: rgba(248, 249, 250, 0.5);
+  background: rgba(255, 255, 255, 0.06);
   border-radius: 8px;
   padding: 8px;
 }
 
 .nav-btn {
-  background: rgba(212, 175, 55, 0.1);
-  border: 1px solid rgba(212, 175, 55, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 6px;
   width: 30px;
   height: 30px;
   cursor: pointer;
   font-size: 14px;
-  color: #d4af37;
+  color: var(--color-text);
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
@@ -521,10 +614,10 @@ watch(() => activeQuests.value.length, (newLength) => {
 }
 
 .current-quest {
-  border: 1px solid rgba(212, 175, 55, 0.2);
-  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
   padding: 16px;
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
   margin-bottom: 16px;
 }
 
@@ -546,7 +639,7 @@ watch(() => activeQuests.value.length, (newLength) => {
 .quest-title {
   font-size: 14px;
   font-weight: 600;
-  color: #2c3e50;
+  color: var(--color-text);
   margin-bottom: 2px;
   line-height: 1.3;
 }
@@ -573,7 +666,7 @@ watch(() => activeQuests.value.length, (newLength) => {
 
 .progress-bar {
   position: relative;
-  background: rgba(189, 195, 199, 0.3);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   height: 20px;
   overflow: hidden;
@@ -607,7 +700,7 @@ watch(() => activeQuests.value.length, (newLength) => {
   text-align: center;
   font-size: 11px;
   font-weight: 600;
-  color: #7f8c8d;
+  color: var(--color-text-muted);
 }
 
 .objectives-section {
@@ -617,7 +710,7 @@ watch(() => activeQuests.value.length, (newLength) => {
 .objectives-header {
   font-size: 12px;
   font-weight: 600;
-  color: #34495e;
+  color: var(--color-text);
   margin-bottom: 8px;
 }
 
@@ -675,7 +768,7 @@ watch(() => activeQuests.value.length, (newLength) => {
 .objective-text {
   flex: 1;
   font-size: 11px;
-  color: #7f8c8d;
+  color: var(--color-text-muted);
   line-height: 1.3;
 }
 
@@ -738,7 +831,7 @@ watch(() => activeQuests.value.length, (newLength) => {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #d4af37;
+  color: var(--color-primary);
   font-weight: 600;
 }
 
@@ -767,6 +860,59 @@ watch(() => activeQuests.value.length, (newLength) => {
   font-size: 11px;
   line-height: 1.4;
 }
+
+.onboarding-highlight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.12), rgba(241, 196, 15, 0.08));
+  box-shadow: 0 8px 24px rgba(212, 175, 55, 0.15);
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.onboarding-highlight:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 30px rgba(212, 175, 55, 0.25);
+}
+
+.highlight-icon { font-size: 20px; }
+.highlight-content { flex: 1; }
+.highlight-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #d4af37;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.highlight-quest-title { font-size: 14px; font-weight: 700; color: var(--color-text); }
+.highlight-description { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; }
+.highlight-meta { display: flex; gap: 8px; margin-top: 6px; }
+.level-badge, .xp-badge {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.highlight-cta {
+  background: linear-gradient(135deg, #d4af37, #f1c40f);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.highlight-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(212, 175, 55, 0.4); }
 
 .quick-stats {
   border-top: 1px solid rgba(212, 175, 55, 0.2);

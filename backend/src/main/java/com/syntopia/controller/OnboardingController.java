@@ -5,6 +5,11 @@ import com.syntopia.service.OnboardingQuestGenerator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -20,6 +25,9 @@ public class OnboardingController {
     
     @Autowired
     private OnboardingQuestGenerator questGenerator;
+
+    @Autowired
+    private com.syntopia.service.QuestService questService;
     
     /**
      * Get all onboarding quests for all roles and levels 1-4
@@ -92,6 +100,57 @@ public class OnboardingController {
             return ResponseEntity.ok(quest);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
+        }
+    }
+
+    /**
+     * Accept onboarding quest for the authenticated user (marks it ACTIVE)
+     */
+    @PostMapping("/accept")
+    public ResponseEntity<?> acceptOnboardingQuest(
+            @RequestParam String role,
+            @RequestParam int level,
+            Authentication authentication,
+            HttpServletRequest request) {
+        try {
+            if (level < 1 || level > 4) {
+                return ResponseEntity.badRequest().body("Level must be 1-4");
+            }
+            // Resolve user from Authentication, SecurityContext, or request principal
+            String userId = null;
+            Authentication auth = authentication;
+            if (auth == null) {
+                auth = SecurityContextHolder.getContext().getAuthentication();
+            }
+            if (auth != null) {
+                userId = auth.getName();
+            } else if (request.getUserPrincipal() != null) {
+                userId = request.getUserPrincipal().getName();
+            } else if (request.getSession(false) != null) {
+                Object ctx = request.getSession(false).getAttribute(
+                        HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);
+                if (ctx instanceof SecurityContext sc && sc.getAuthentication() != null) {
+                    userId = sc.getAuthentication().getName();
+                }
+            }
+
+            if (userId == null) {
+                return ResponseEntity.status(401).body(java.util.Map.of(
+                        "success", false,
+                        "message", "Authentication required"
+                ));
+            }
+            var userQuest = questService.acceptOnboardingQuestForUser(userId, role, level);
+            return ResponseEntity.ok(java.util.Map.of(
+                    "success", true,
+                    "message", "Onboarding quest accepted",
+                    "userQuest", userQuest
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(java.util.Map.of(
+                    "success", false,
+                    "message", e.getMessage()
+            ));
         }
     }
     

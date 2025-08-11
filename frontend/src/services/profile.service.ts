@@ -14,7 +14,7 @@ export class ProfileService {
    */
   async getCurrentProfile() {
     try {
-      const response = await api.get('/api/profile')
+      const response = await api.get('/profile')
       return {
         success: true,
         data: response.data.data
@@ -32,7 +32,7 @@ export class ProfileService {
    */
   async updateProfile(profileData: Partial<User>) {
     try {
-      const response = await api.put('/api/profile', profileData)
+      const response = await api.put('/profile', profileData)
       return {
         success: true,
         data: response.data.data,
@@ -54,7 +54,7 @@ export class ProfileService {
       const formData = new FormData()
       formData.append('avatar', file)
       
-      const response = await api.post('/api/profile/avatar', formData, {
+      const response = await api.post('/profile/avatar', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -78,7 +78,7 @@ export class ProfileService {
    */
   async getAchievements() {
     try {
-      const response = await api.get('/api/profile/achievements')
+      const response = await api.get('/profile/achievements')
       return {
         success: true,
         data: response.data.data
@@ -96,7 +96,7 @@ export class ProfileService {
    */
   async getSocialConnections() {
     try {
-      const response = await api.get('/api/profile/social')
+      const response = await api.get('/profile/social')
       return {
         success: true,
         data: response.data.data
@@ -114,7 +114,7 @@ export class ProfileService {
    */
   async getPublicProfile(userId: string) {
     try {
-      const response = await api.get(`/api/profile/${userId}`)
+      const response = await api.get(`/profile/${userId}`)
       return {
         success: true,
         data: response.data.data
@@ -139,7 +139,7 @@ export class ProfileService {
       params.append('page', page.toString())
       params.append('size', size.toString())
       
-      const response = await api.get(`/api/profile/search?${params}`)
+      const response = await api.get(`/profile/search?${params}`)
       return {
         success: true,
         data: response.data.data

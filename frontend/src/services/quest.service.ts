@@ -132,7 +132,7 @@ class QuestService {
    */
   async getUserQuests(): Promise<ApiResponse<UserQuest[]>> {
     try {
-      return await apiService.get<UserQuest[]>('/api/user-quests/available')
+      return await apiService.get<UserQuest[]>('/user-quests/available')
     } catch (error) {
       console.error('❌ Error fetching user quests:', error)
       return {
@@ -143,11 +143,34 @@ class QuestService {
   }
 
   /**
+   * Get active quests for the current user
+   */
+  async getUserActiveQuests(): Promise<ApiResponse<UserQuest[]>> {
+    try {
+      // Preferred endpoint if backend supports it
+      return await apiService.get<UserQuest[]>('/user-quests/active')
+    } catch (error) {
+      console.warn('⚠️ /user-quests/active not available, falling back to /user-quests/available and filtering locally:', error)
+      try {
+        const res = await apiService.get<UserQuest[]>('/user-quests/available')
+        if (res.success && res.data) {
+          // Filter to only ACTIVE items if status is included
+          const onlyActive = res.data.filter(uq => uq.status === UserQuestStatus.USER_ACTIVE)
+          return { success: true, data: onlyActive }
+        }
+        return res
+      } catch (e) {
+        return { success: false, error: { message: 'Failed to fetch active user quests' } }
+      }
+    }
+  }
+
+  /**
    * Accept/Start a quest for the current user
    */
   async acceptQuest(questId: string): Promise<ApiResponse<{userQuest: UserQuest, message: string}>> {
     try {
-      return await apiService.post<{userQuest: UserQuest, message: string}>(`/api/user-quests/${questId}/accept`)
+      return await apiService.post<{userQuest: UserQuest, message: string}>(`/user-quests/${questId}/accept`)
     } catch (error) {
       console.error('❌ Error accepting quest:', error)
       return {
@@ -162,7 +185,7 @@ class QuestService {
    */
   async completeQuest(questId: string, completionData?: Record<string, any>): Promise<ApiResponse<{userQuest: UserQuest, experienceAwarded: number, message: string}>> {
     try {
-      return await apiService.post<{userQuest: UserQuest, experienceAwarded: number, message: string}>(`/api/user-quests/${questId}/complete`, completionData || {})
+      return await apiService.post<{userQuest: UserQuest, experienceAwarded: number, message: string}>(`/user-quests/${questId}/complete`, completionData || {})
     } catch (error) {
       console.error('❌ Error completing quest:', error)
       return {
@@ -177,7 +200,7 @@ class QuestService {
    */
   async abandonQuest(questId: string): Promise<ApiResponse<{userQuest: UserQuest, message: string}>> {
     try {
-      return await apiService.post<{userQuest: UserQuest, message: string}>(`/api/user-quests/${questId}/abandon`)
+      return await apiService.post<{userQuest: UserQuest, message: string}>(`/user-quests/${questId}/abandon`)
     } catch (error) {
       console.error('❌ Error abandoning quest:', error)
       return {
@@ -202,7 +225,7 @@ class QuestService {
         activeQuests: number
         completedThisWeek: number  
         recentCompletions: UserQuest[]
-      }>('/api/user-quests/statistics')
+      }>('/user-quests/statistics')
     } catch (error) {
       console.error('❌ Error fetching quest statistics:', error)
       return {
@@ -219,9 +242,9 @@ class QuestService {
   /**
    * Get all quests (legacy method)
    */
-  async getQuests(): Promise<ApiResponse<Quest[]>> {
+  async getQuests(): Promise<ApiResponse<{quests: Quest[], count: number, success: boolean}>> {
     try {
-      return await apiService.get<Quest[]>('/api/quests')
+      return await apiService.get<{quests: Quest[], count: number, success: boolean}>('/quests')
     } catch (error) {
       console.error('❌ Error fetching quests:', error)
       return {
@@ -236,7 +259,7 @@ class QuestService {
    */
   async getQuestById(questId: string): Promise<ApiResponse<Quest>> {
     try {
-      return await apiService.get<Quest>(`/api/quests/${questId}`)
+      return await apiService.get<Quest>(`/quests/${questId}`)
     } catch (error) {
       console.error('❌ Error fetching quest:', error)
       return {
@@ -251,7 +274,7 @@ class QuestService {
    */
   async createQuest(questData: CreateQuestData): Promise<ApiResponse<QuestResponse>> {
     try {
-      return await apiService.post<QuestResponse>('/api/quests', questData)
+      return await apiService.post<QuestResponse>('/quests', questData)
     } catch (error) {
       console.error('❌ Error creating quest:', error)
       return {

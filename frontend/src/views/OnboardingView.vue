@@ -61,8 +61,8 @@
         </button>
       </div>
 
-      <!-- Quest Phase (All Levels) -->
-      <div v-else-if="currentQuest" class="quest-container">
+  <!-- Quest Phase (All Levels) -->
+  <div v-else-if="currentQuest && !onboardingCompleted" class="quest-container">
         <div class="quest-card card">
           <div class="quest-header">
             <div class="quest-level-badge">Level {{ currentQuest.level }}</div>
@@ -170,6 +170,14 @@
         </div>
       </div>
 
+      <!-- Completion State -->
+      <div v-else-if="onboardingCompleted" class="loading-container card">
+        <div class="sacred-spinner"></div>
+        <h2>🎉 Onboarding Complete</h2>
+        <p>Your sacred journey has begun. Explore quests and the community.</p>
+        <button class="btn btn-primary" @click="goToQuests">Go to Quests</button>
+      </div>
+
       <!-- Loading State -->
       <div v-else-if="isLoading" class="loading-container card">
         <div class="sacred-spinner"></div>
@@ -211,6 +219,7 @@ const currentXP = ref(0)
 const selectedRole = ref<string>('')
 const pendingRole = ref<string>('')
 const currentQuest = ref<OnboardingQuest | null>(null)
+const onboardingCompleted = ref(false)
 const availableRoles = ref<SacredRole[]>([])
 const synPrinciples = ref<SynPrinciple[]>([])
 const completedSteps = ref<number[]>([])
@@ -305,10 +314,19 @@ async function initializeOnboarding() {
     selectedRole.value = progress.selectedRole || ''
     isGitHubConnected.value = progress.isGitHubConnected
     studiedPrinciples.value = progress.synPrinciplesUnderstood
+    onboardingCompleted.value = !!progress.onboardingCompleted || currentLevel.value > 4
     
-    // Load current quest if user has selected a role
-    if (selectedRole.value && currentLevel.value <= 4) {
+    // If user has selected a role and not completed, ensure backend has ACTIVE onboarding
+    if (selectedRole.value && currentLevel.value <= 4 && !onboardingCompleted.value) {
+      // Fire-and-forget accept to backend (non-blocking)
+      OnboardingService.accept(selectedRole.value, currentLevel.value).finally(() => {})
       await loadCurrentQuest()
+    }
+    
+    // If completed, redirect to quests after a brief delay
+    if (onboardingCompleted.value) {
+      setTimeout(() => router.replace('/quests'), 600)
+      return
     }
     
   } catch (error) {
@@ -320,7 +338,7 @@ async function initializeOnboarding() {
 
 async function loadCurrentQuest() {
   try {
-    if (selectedRole.value && currentLevel.value <= 4) {
+  if (selectedRole.value && currentLevel.value <= 4 && !onboardingCompleted.value) {
       currentQuest.value = await OnboardingService.getQuestByRoleAndLevel(selectedRole.value, currentLevel.value)
     }
   } catch (error) {
@@ -340,6 +358,10 @@ async function selectRole() {
     await OnboardingService.updateOnboardingProgress(userId, {
       selectedRole: selectedRole.value
     })
+    // Inform backend to mark onboarding ACTIVE at this level
+    if (selectedRole.value && currentLevel.value <= 4 && !onboardingCompleted.value) {
+      OnboardingService.accept(selectedRole.value, currentLevel.value).finally(() => {})
+    }
     
   } catch (error) {
     console.error('Error selecting role:', error)
@@ -379,9 +401,20 @@ async function completeQuest() {
     completedQuests.value.push(currentQuest.value.id)
     completedSteps.value = []
     
+    // Persist progress and determine completion state
+    const updated = await OnboardingService.updateOnboardingProgress(userId, {
+      currentLevel: currentLevel.value,
+      currentXP: currentXP.value,
+      completedQuests: completedQuests.value
+    })
+    onboardingCompleted.value = !!updated.onboardingCompleted || currentLevel.value > 4
+    
     // Load next quest or complete onboarding
-    if (currentLevel.value <= 4) {
+    if (!onboardingCompleted.value && currentLevel.value <= 4) {
       await loadCurrentQuest()
+    } else {
+      // Redirect to quests view when complete
+      router.replace('/quests')
     }
     
   } catch (error) {
@@ -407,9 +440,15 @@ async function connectGitHub() {
     isGitHubConnected.value = true
     
     const userId = userStore.user?.id || 'user-123'
-    await OnboardingService.updateOnboardingProgress(userId, {
-      isGitHubConnected: true
+    const updated = await OnboardingService.updateOnboardingProgress(userId, {
+      isGitHubConnected: true,
+      onboardingCompleted: true,
+      onboardingCompletedAt: new Date()
     })
+    onboardingCompleted.value = !!updated.onboardingCompleted
+    if (onboardingCompleted.value) {
+      router.replace('/quests')
+    }
     
   } catch (error) {
     console.error('Error connecting GitHub:', error)

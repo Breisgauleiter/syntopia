@@ -39,6 +39,21 @@ const filters = ref<QuestFilter>({
 const sortBy = ref<'title' | 'difficulty' | 'experience' | 'level'>('title')
 const sortDirection = ref<'asc' | 'desc'>('asc')
 
+// Role options for filter (derived from quests + user's role)
+const roleOptions = computed<string[]>(() => {
+  const roles = new Set<string>()
+  const qArr = Array.isArray(quests.value) ? quests.value : []
+  for (const q of qArr) {
+    if (q.role && q.role !== 'All') roles.add(q.role)
+  }
+  const list = Array.from(roles).sort()
+  const myRole = userStore.userRole
+  if (myRole && myRole !== 'None' && !roles.has(myRole)) {
+    list.unshift(myRole)
+  }
+  return list
+})
+
 // Quest statistics
 const questStats = ref({
   totalAvailable: 0,
@@ -58,7 +73,8 @@ const loadQuests = async () => {
     // Load all quests
     const allQuestsResponse = await questService.getQuests()
     if (allQuestsResponse.success && allQuestsResponse.data) {
-      quests.value = allQuestsResponse.data
+      // Backend returns {success: true, quests: [...], count: ...}
+      quests.value = allQuestsResponse.data.quests || []
     }
 
     // Load available quests for current user
@@ -79,7 +95,8 @@ const loadQuests = async () => {
     }
 
     // Filter completed quests
-    completedQuests.value = quests.value.filter(quest => quest.status === QuestStatus.COMPLETED)
+    completedQuests.value = Array.isArray(quests.value) ? 
+      quests.value.filter(quest => quest.status === QuestStatus.COMPLETED) : []
 
     // Load onboarding quests if user has selected a role
     await loadOnboardingQuests()
@@ -132,6 +149,27 @@ const nextOnboardingQuest = computed(() => {
   const currentLevel = userStore.userLevel
   return onboardingQuests.value.find(quest => quest.level === currentLevel)
 })
+
+/**
+ * Continue onboarding: ensure backend marks onboarding ACTIVE, then navigate
+ */
+const continueOnboarding = async () => {
+  try {
+    const role = userStore.userRole
+    const next = nextOnboardingQuest.value
+    if (role && next) {
+      await onboardingService.accept(role, next.level)
+      // Notify other components (e.g., QuestTracker) to refresh
+      window.dispatchEvent(new CustomEvent('onboardingAccepted'))
+    }
+  } catch (e) {
+    // Non-blocking; proceed to navigate regardless
+    console.warn('Onboarding accept failed or skipped:', e)
+  } finally {
+    // Navigate to onboarding flow
+    window.location.href = '/onboarding'
+  }
+}
 
 /**
  * Accept a quest
@@ -281,19 +319,22 @@ const abandonQuest = async (quest: Quest) => {
 const filteredQuests = computed(() => {
   let questsToFilter: Quest[] = []
   
+  // Ensure quests.value is an array before filtering
+  const questsArray = Array.isArray(quests.value) ? quests.value : []
+  
   switch (activeTab.value) {
     case 'available':
       // Convert UserQuests to Quest type by accessing the questId - for now just use quests array
-      questsToFilter = quests.value.filter(q => q.status === QuestStatus.AVAILABLE)
+      questsToFilter = questsArray.filter(q => q.status === QuestStatus.AVAILABLE)
       break
     case 'completed':
-      questsToFilter = completedQuests.value
+      questsToFilter = Array.isArray(completedQuests.value) ? completedQuests.value : []
       break
     case 'github':
-      questsToFilter = quests.value.filter(q => q.type === QuestType.GITHUB_ISSUE)
+      questsToFilter = questsArray.filter(q => q.type === QuestType.GITHUB_ISSUE)
       break
     default:
-      questsToFilter = quests.value.filter(q => q.status === QuestStatus.AVAILABLE)
+      questsToFilter = questsArray.filter(q => q.status === QuestStatus.AVAILABLE)
   }
 
   // Apply filters
@@ -343,7 +384,7 @@ const filteredQuests = computed(() => {
  * GitHub quests computed property
  */
 const githubQuests = computed(() => {
-  return quests.value.filter(quest => quest.type === QuestType.GITHUB_ISSUE)
+  return Array.isArray(quests.value) ? quests.value.filter(quest => quest.type === QuestType.GITHUB_ISSUE) : []
 })
 
 /**
@@ -529,9 +570,9 @@ watch(activeTab, () => {
               </div>
             </div>
             <div class="quest-action">
-              <router-link to="/onboarding" class="btn btn-secondary">
+              <button class="btn btn-secondary" @click="continueOnboarding">
                 Continue Quest
-              </router-link>
+              </button>
             </div>
           </div>
           <div class="onboarding-timeline">
@@ -604,6 +645,16 @@ watch(activeTab, () => {
         </div>
         
         <div class="filter-group">
+          <label for="role-filter">Role:</label>
+          <select id="role-filter" v-model="filters.role">
+            <option :value="undefined">All Roles</option>
+            <option v-for="role in roleOptions" :key="role" :value="role">
+              {{ role }}
+            </option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
           <label for="sort-filter">Sort by:</label>
           <select id="sort-filter" v-model="sortBy">
             <option value="title">Title</option>
@@ -655,6 +706,25 @@ watch(activeTab, () => {
       <div class="quest-content">
         <!-- Available Quests -->
         <div v-if="activeTab === 'available'" class="quest-list">
+          <!-- Pinned Onboarding Highlight -->
+          <div 
+            v-if="hasActiveOnboardingQuests && nextOnboardingQuest"
+            class="card pinned-onboarding"
+          >
+            <div class="pinned-inner">
+              <div class="pin-icon">🌟</div>
+              <div class="pin-content">
+                <div class="pin-title">Continue Onboarding</div>
+                <div class="pin-quest">{{ nextOnboardingQuest.title }}</div>
+                <div class="pin-desc">{{ nextOnboardingQuest.description }}</div>
+                <div class="pin-meta">
+                  <span class="pin-level">Level {{ nextOnboardingQuest.level }}</span>
+                  <span class="pin-xp">+{{ nextOnboardingQuest.xpReward }} XP</span>
+                </div>
+              </div>
+              <button class="btn btn-primary btn-sm" @click="continueOnboarding">Open</button>
+            </div>
+          </div>
           <div v-if="filteredQuests.length === 0" class="empty-state card">
             <div class="empty-icon">🎯</div>
             <h3>No Available Quests</h3>
@@ -1368,6 +1438,37 @@ watch(activeTab, () => {
 .quest-list {
   display: grid;
   gap: 1.5rem;
+}
+
+.pinned-onboarding {
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.12), rgba(241, 196, 15, 0.08));
+}
+
+.pinned-inner {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.pin-icon { font-size: 1.5rem; }
+.pin-content { flex: 1; }
+.pin-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #d4af37;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.pin-quest { font-weight: 700; color: var(--color-text); }
+.pin-desc { color: var(--color-text-muted); font-size: 0.9rem; margin-top: 2px; }
+.pin-meta { display: flex; gap: 0.5rem; margin-top: 6px; }
+.pin-level, .pin-xp {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 
 .quest-card {

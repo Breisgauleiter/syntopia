@@ -155,18 +155,17 @@ public class UserQuestController {
             Authentication authentication) {
         try {
             String userId = authentication.getName();
+            UserQuest updatedUserQuest = questService.updateQuestProgress(userId, questId, progressUpdate);
             
-            // TODO: Implement progress update logic in QuestService
-            // For now, return success
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
+            response.put("userQuest", updatedUserQuest);
             response.put("message", "Progress updated successfully");
-            
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("success", false);
-            errorResponse.put("message", "Failed to update progress");
+            errorResponse.put("message", "Failed to update progress: " + e.getMessage());
             return ResponseEntity.badRequest().body(errorResponse);
         }
     }
@@ -178,24 +177,22 @@ public class UserQuestController {
     public ResponseEntity<List<UserQuest>> getActiveQuests(Authentication authentication) {
         try {
             String userId = authentication.getName();
-            // TODO: Implement in QuestService
-            // List<UserQuest> activeQuests = questService.getActiveQuestsForUser(userId);
-            return ResponseEntity.ok(List.of());
+            List<UserQuest> activeQuests = questService.getActiveQuestsForUser(userId);
+            return ResponseEntity.ok(activeQuests);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
     }
 
-    /**
+        /**
      * Get user's completed quests
      */
     @GetMapping("/completed")
     public ResponseEntity<List<UserQuest>> getCompletedQuests(Authentication authentication) {
         try {
             String userId = authentication.getName();
-            // TODO: Implement in QuestService
-            // List<UserQuest> completedQuests = questService.getCompletedQuestsForUser(userId);
-            return ResponseEntity.ok(List.of());
+            List<UserQuest> completedQuests = questService.getCompletedQuestsForUser(userId);
+            return ResponseEntity.ok(completedQuests);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }

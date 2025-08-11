@@ -461,8 +461,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useUserStore } from '@/stores/user'
-import api from '@/services/api'
-import communityService from '@/services/community.service'
+ import communityService from '@/services/community.service'
 
 const userStore = useUserStore()
 
@@ -513,11 +512,77 @@ const projectForm = reactive({
 })
 
 // Methods
+// Normalize backend feed items into a simple display model the UI expects
+const adaptFeedItems = (items: any[] = []) => {
+  return items.map((item) => {
+    const base = { timestamp: item.timestamp }
+    if (item.type === 'quest_completed' && item.user && item.quest) {
+      return {
+        ...base,
+        user: {
+          displayName: item.user.displayName,
+          profilePictureUrl: item.user.avatarUrl,
+          selectedRole: item.user.role,
+          currentLevel: item.user.level
+        },
+        quest: {
+          title: item.quest.title,
+          type: 'Quest',
+          experienceReward: item.quest.xp || 0
+        }
+      }
+    }
+    if (item.type === 'project_created' && item.user && item.project) {
+      return {
+        ...base,
+        user: {
+          displayName: item.user.displayName,
+          profilePictureUrl: item.user.avatarUrl,
+          selectedRole: item.user.role,
+          currentLevel: item.user.level
+        },
+        quest: {
+          title: `created project: ${item.project.title}`,
+          type: 'Project',
+          experienceReward: 0
+        }
+      }
+    }
+    if (item.type === 'connection_accepted' && item.user && item.connection) {
+      const other = item.connection?.to === item.user?.id ? item.connection?.from : item.connection?.to
+      return {
+        ...base,
+        user: {
+          displayName: item.user.displayName,
+          profilePictureUrl: item.user.avatarUrl,
+          selectedRole: item.user.role,
+          currentLevel: item.user.level
+        },
+        quest: {
+          title: `connected with ${other}`,
+          type: 'Connection',
+          experienceReward: 0
+        }
+      }
+    }
+    return {
+      ...base,
+      user: item.user || {},
+      quest: { title: item.project?.title || 'Activity', type: item.type, experienceReward: 0 }
+    }
+  })
+}
+
 const loadFeed = async () => {
   try {
     loading.value = true
-    const response = await api.get('/api/community/feed')
-    feed.value = response.data
+    const result = await communityService.getCommunityFeed(0, 20)
+    if (result.success) {
+      const rawItems = result.data?.items || []
+      feed.value = { activities: adaptFeedItems(rawItems) }
+    } else {
+      console.error('Failed to load feed:', result.error)
+    }
   } catch (error) {
     console.error('Failed to load feed:', error)
   } finally {
@@ -528,13 +593,18 @@ const loadFeed = async () => {
 const searchUsers = async () => {
   try {
     loadingUsers.value = true
-    const params = new URLSearchParams()
-    if (searchQuery.value) params.append('search', searchQuery.value)
-    if (roleFilter.value) params.append('role', roleFilter.value)
-    if (levelFilter.value) params.append('minLevel', levelFilter.value)
-    
-    const response = await api.get(`/api/community/users?${params}`)
-    users.value = response.data
+    const result = await communityService.getUserDirectory(
+      searchQuery.value || undefined,
+      roleFilter.value || undefined,
+      levelFilter.value ? parseInt(levelFilter.value) : undefined,
+      0,
+      20
+    )
+    if (result.success) {
+      users.value = result.data?.users || []
+    } else {
+      console.error('Failed to search users:', result.error)
+    }
   } catch (error) {
     console.error('Failed to search users:', error)
   } finally {
@@ -545,8 +615,16 @@ const searchUsers = async () => {
 const loadConnections = async () => {
   try {
     loadingConnections.value = true
-    const response = await api.get('/api/community/connections')
-    connections.value = response.data
+    const result = await communityService.getConnections()
+    if (result.success) {
+      const list = result.data?.connections || []
+      // Adapt into sections expected by template
+      const pending = list.filter((c: any) => (c.status || '').toUpperCase() === 'PENDING')
+      const accepted = list.filter((c: any) => (c.status || '').toUpperCase() === 'ACCEPTED')
+      connections.value = { pending, accepted }
+    } else {
+      console.error('Failed to load connections:', result.error)
+    }
   } catch (error) {
     console.error('Failed to load connections:', error)
   } finally {
@@ -557,9 +635,9 @@ const loadConnections = async () => {
 const loadProjects = async () => {
   try {
     loadingProjects.value = true
-    const result = await communityService.getCommunityProjects(0, 20)
+    const result = await communityService.getCommunityProjects(false, 0, 20)
     if (result.success) {
-      projects.value = result.data
+  projects.value = result.data?.projects || []
     }
   } catch (error) {
     console.error('Failed to load projects:', error)
@@ -571,9 +649,26 @@ const loadProjects = async () => {
 const loadLeaderboard = async () => {
   try {
     loadingLeaderboard.value = true
-    const result = await communityService.getLeaderboard(leaderboardType.value, 0, 50)
+    // Map filters to backend 'window' param
+    let window: 'week' | 'month' | 'all' | undefined = 'all'
+    if (leaderboardType.value === 'experience') {
+      window = 'all'
+    }
+    const result = await communityService.getLeaderboard(window)
     if (result.success) {
-      leaderboard.value = result.data
+      const entries = (result.data as any[]) || []
+      // Adapt to flat shape expected by template
+      leaderboard.value = entries.map((e: any) => ({
+        id: e?.user?.id || e?.id,
+        displayName: e?.user?.displayName || e?.displayName,
+        profilePictureUrl: e?.user?.avatarUrl || e?.avatarUrl,
+        selectedRole: e?.user?.role || e?.role,
+        currentLevel: e?.user?.level ?? e?.level ?? 0,
+        experiencePoints: e?.xp ?? e?.experiencePoints ?? 0,
+        questsCompleted: e?.completed ?? e?.questsCompleted ?? 0
+      }))
+    } else {
+      console.error('Failed to load leaderboard:', result.error)
     }
   } catch (error) {
     console.error('Failed to load leaderboard:', error)
@@ -596,19 +691,19 @@ const loadStats = async () => {
 const sendConnectionRequest = async (toUserId: string) => {
   try {
     connectingTo.value = toUserId
-    await api.post('/api/community/connect', {
-      toUserId,
-      type: 'CONNECTION',
-      message: 'Hello! I\'d love to connect with you in the Syntopia community.'
-    })
+    const result = await communityService.sendConnectionRequest(toUserId, 'collaborator')
     
-    // Update user's connection status
-    const user = users.value.find(u => u.id === toUserId)
-    if (user) {
-      user.isConnected = true
+    if (result.success) {
+      // Update user's connection status
+      const user = users.value.find(u => u.id === toUserId)
+      if (user) {
+        user.isConnected = true
+      }
+      alert('Connection request sent!')
+    } else {
+      console.error('Failed to send connection request:', result.error)
+      alert('Failed to send connection request. Please try again.')
     }
-    
-    alert('Connection request sent!')
   } catch (error) {
     console.error('Failed to send connection request:', error)
     alert('Failed to send connection request. Please try again.')
@@ -620,13 +715,18 @@ const sendConnectionRequest = async (toUserId: string) => {
 const respondToRequest = async (requestId: string, action: string) => {
   try {
     respondingTo.value = requestId
-    await api.put(`/api/community/connect/${requestId}`, { action })
+    const actionTyped = action.toLowerCase() as 'accept' | 'decline'
+    const result = await communityService.respondToConnectionRequest(requestId, actionTyped)
     
-    // Reload connections
-    loadConnections()
-    
-    const actionText = action === 'ACCEPT' ? 'accepted' : 'declined'
-    alert(`Connection request ${actionText}!`)
+    if (result.success) {
+      // Reload connections
+      loadConnections()
+      const actionText = actionTyped === 'accept' ? 'accepted' : 'declined'
+      alert(`Connection request ${actionText}!`)
+    } else {
+      console.error('Failed to respond to request:', result.error)
+      alert('Failed to respond to request. Please try again.')
+    }
   } catch (error) {
     console.error('Failed to respond to request:', error)
     alert('Failed to respond to request. Please try again.')
@@ -638,17 +738,28 @@ const respondToRequest = async (requestId: string, action: string) => {
 const createProject = async () => {
   try {
     creatingProject.value = true
-    await api.post('/api/community/projects', projectForm)
+    const projectData = {
+      title: projectForm.title,
+      description: projectForm.description,
+      tags: [],
+      visibility: 'public' as const
+    }
+    const result = await communityService.createProject(projectData)
     
-    // Reset form and close modal
-    projectForm.title = ''
-    projectForm.description = ''
-    showCreateProject.value = false
-    
-    // Reload projects
-    loadProjects()
-    
-    alert('Project created successfully!')
+    if (result.success) {
+      // Reset form and close modal
+      projectForm.title = ''
+      projectForm.description = ''
+      showCreateProject.value = false
+      
+      // Reload projects
+      loadProjects()
+      
+      alert('Project created successfully!')
+    } else {
+      console.error('Failed to create project:', result.error)
+      alert('Failed to create project. Please try again.')
+    }
   } catch (error) {
     console.error('Failed to create project:', error)
     alert('Failed to create project. Please try again.')

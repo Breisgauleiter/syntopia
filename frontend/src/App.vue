@@ -21,9 +21,9 @@ const dismissQuestNotification = () => {
   questNotification.value = null
 }
 
-onMounted(() => {
+onMounted(async () => {
   // Check for authenticated user on app load
-  userStore.checkAuthStatus()
+  await userStore.checkAuthStatus()
   
   // Example: Show welcome notification for new users
   if (userStore.isAuthenticated && userStore.user) {

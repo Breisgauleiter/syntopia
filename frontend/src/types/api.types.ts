@@ -127,17 +127,121 @@ export enum QuestStatus {
 }
 
 // Community features (future implementation)
-export interface CommunityPost {
+// Community features - aligned with backend DTOs
+export interface ConnectionRequestDTO {
+  toUserId: string
+  connectionType: 'friend' | 'mentor' | 'collaborator'
+}
+
+export interface ConnectionResponseDTO {
+  action: 'accept' | 'decline'
+}
+
+export interface ConnectionDTO {
   id: string
-  authorId: string
-  author: User
-  title: string
-  content: string
-  tags: string[]
-  likes: number
-  comments: number
+  type: string
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED'
   createdAt: string
-  updatedAt: string
+  updatedAt?: string
+  otherUser: {
+    id: string
+    displayName: string
+    avatarUrl?: string
+    level?: number
+    role?: string
+  }
+}
+
+export interface CreateProjectDTO {
+  title: string
+  description: string
+  tags?: string[]
+  visibility?: 'public' | 'private'
+}
+
+export interface ProjectDTO {
+  id: string
+  title: string
+  description: string
+  tags: string[]
+  visibility: string
+  createdAt: string
+  membersCount: number
+  owner: {
+    id: string
+    displayName: string
+    avatarUrl?: string
+  }
+}
+
+export interface LeaderboardEntryDTO {
+  user: {
+    id: string
+    displayName: string
+    avatarUrl?: string
+    level?: number
+  }
+  xp: number
+  completed: number
+  rank: number
+}
+
+export interface FeedItemDTO {
+  type: 'quest_completed' | 'project_created' | 'connection_accepted'
+  timestamp: string
+  user?: {
+    id: string
+    displayName: string
+    avatarUrl?: string
+  }
+  quest?: {
+    id: string
+    title: string
+    xp?: number
+  }
+  project?: {
+    id: string
+    title: string
+  }
+  connection?: {
+    from: string
+    to: string
+  }
+}
+
+export interface CommunityStatsDTO {
+  users: number
+  activeUsers7d: number
+  projects: number
+  connections: number
+  questsCompleted: number
+}
+
+export interface CommunityFeedResponse {
+  items: FeedItemDTO[]
+  pagination: {
+    page: number
+    size: number
+    total: number
+    hasNext: boolean
+  }
+}
+
+export interface UserDirectoryResponse {
+  users: Array<{
+    id: string
+    displayName: string
+    avatarUrl?: string
+    role: string
+    level: number
+    connectionStatus?: 'CONNECTED' | 'PENDING' | 'NONE'
+  }>
+  pagination: {
+    page: number
+    size: number
+    total: number
+    hasNext: boolean
+  }
 }
 
 export interface Comment {

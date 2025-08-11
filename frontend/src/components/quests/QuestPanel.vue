@@ -57,6 +57,21 @@
             <option value="GITHUB">GitHub</option>
           </select>
         </div>
+
+        <!-- Next Onboarding Quest Highlight -->
+        <div v-if="nextOnboardingQuest" class="onboarding-highlight" @click="openOnboarding">
+          <div class="highlight-icon">🌟</div>
+          <div class="highlight-content">
+            <div class="highlight-title">Continue Onboarding</div>
+            <div class="highlight-quest-title">{{ nextOnboardingQuest.title }}</div>
+            <div class="highlight-description">{{ nextOnboardingQuest.description }}</div>
+            <div class="highlight-meta">
+              <span class="level-badge">Level {{ onboardingProgressLevel || 1 }} ➜ Next</span>
+              <span class="xp-badge">+{{ nextOnboardingQuest.xpReward }} XP</span>
+            </div>
+          </div>
+          <button class="highlight-cta" @click.stop="openOnboarding">Open Onboarding</button>
+        </div>
         
         <div class="quest-list">
           <div 
@@ -153,8 +168,11 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useUserStore } from '@/stores/user'
 import questService, { UserQuestStatus, QuestType, type Quest, type UserQuest } from '@/services/quest.service'
+import OnboardingService, { type OnboardingQuest } from '@/services/onboarding.service'
+import { useRouter } from 'vue-router'
 
 const userStore = useUserStore()
+const router = useRouter()
 
 // Component state
 const isVisible = ref(true)
@@ -170,6 +188,9 @@ const dragOffset = ref({ x: 0, y: 0 })
 const availableQuests = ref<Quest[]>([])
 const userQuests = ref<UserQuest[]>([])
 const isLoading = ref(false)
+// Onboarding integration
+const nextOnboardingQuest = ref<OnboardingQuest | null>(null)
+const onboardingProgressLevel = ref<number | null>(null)
 
 // Quest tabs configuration
 const questTabs = [
@@ -296,6 +317,23 @@ const showQuestCompletion = () => {
   window.dispatchEvent(new CustomEvent('questCompleted'))
 }
 
+// Open onboarding flow and ensure backend marks onboarding ACTIVE
+const openOnboarding = async () => {
+  try {
+    const role = userStore.user?.selectedRole
+    if (role && nextOnboardingQuest.value) {
+      await OnboardingService.accept(role, nextOnboardingQuest.value.level)
+      // Refresh active quests so tracker/panel reflect ACTIVE from backend
+      await loadUserQuests()
+    }
+  } catch (e) {
+    // Non-blocking; continue navigation regardless
+    console.warn('Onboarding accept failed or skipped:', e)
+  } finally {
+    router.push('/onboarding')
+  }
+}
+
 // Panel controls
 const toggleMinimized = () => {
   isMinimized.value = !isMinimized.value
@@ -347,7 +385,8 @@ const loadAvailableQuests = async () => {
   try {
     const response = await questService.getQuests()
     if (response.success && response.data) {
-      availableQuests.value = response.data
+      // Backend returns {success: true, quests: [...], count: ...}
+      availableQuests.value = response.data.quests || []
     }
   } catch (error) {
     console.error('Failed to load available quests:', error)
@@ -367,15 +406,38 @@ const loadUserQuests = async () => {
   }
 }
 
+const loadNextOnboardingQuest = async () => {
+  if (!userStore.user?.id) return
+  try {
+    const progress = await OnboardingService.getUserOnboardingProgress(userStore.user.id)
+    onboardingProgressLevel.value = progress.currentLevel
+    // Stop showing if completed or reached final stage
+    if (progress.onboardingCompleted || progress.currentLevel >= 4) {
+      nextOnboardingQuest.value = null
+      return
+    }
+    const role = userStore.user.selectedRole || progress.selectedRole || ''
+    if (!role) {
+      nextOnboardingQuest.value = null
+      return
+    }
+    const recs = await OnboardingService.getQuestRecommendations(userStore.user.id, role)
+    nextOnboardingQuest.value = recs[0] || null
+  } catch (error) {
+    console.warn('Failed to load next onboarding quest:', error)
+    nextOnboardingQuest.value = null
+  }
+}
+
 const loadData = async () => {
   isLoading.value = true
-  await Promise.all([loadAvailableQuests(), loadUserQuests()])
+  await Promise.all([loadAvailableQuests(), loadUserQuests(), loadNextOnboardingQuest()])
   isLoading.value = false
 }
 
 // Lifecycle hooks
 onMounted(() => {
-  if (userStore.user?.id) {
+  if (userStore.authInitialized && userStore.user?.id) {
     loadData()
   }
 })
@@ -387,10 +449,20 @@ onUnmounted(() => {
   document.removeEventListener('touchend', stopDrag)
 })
 
-// Watch for user changes
+// Watch for user changes and auth initialization
+watch(() => userStore.authInitialized, () => {
+  if (userStore.authInitialized && userStore.user?.id) {
+    loadData()
+  }
+})
 watch(() => userStore.user?.id, (newUserId) => {
   if (newUserId) {
     loadData()
+  }
+})
+watch(() => userStore.user?.selectedRole, () => {
+  if (userStore.authInitialized && userStore.user?.id) {
+    loadNextOnboardingQuest()
   }
 })
 </script>
@@ -400,13 +472,13 @@ watch(() => userStore.user?.id, (newUserId) => {
   position: fixed;
   width: 320px;
   max-height: 600px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(15px);
-  border: 2px solid rgba(212, 175, 55, 0.4);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 16px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-glass);
   z-index: 1001;
-  font-family: 'Cinzel', serif;
+  font-family: var(--font-sans);
   overflow: hidden;
   transition: all 0.3s ease;
 }
@@ -448,8 +520,8 @@ watch(() => userStore.user?.id, (newUserId) => {
 }
 
 .panel-header {
-  background: linear-gradient(135deg, rgba(212, 175, 55, 0.1), rgba(241, 196, 15, 0.1));
-  border-bottom: 1px solid rgba(212, 175, 55, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
   padding: 12px 16px;
   cursor: move;
   display: flex;
@@ -462,7 +534,7 @@ watch(() => userStore.user?.id, (newUserId) => {
 .header-title {
   font-size: 18px;
   font-weight: 700;
-  color: #2c3e50;
+  color: var(--color-text);
 }
 
 .header-controls {
@@ -473,7 +545,7 @@ watch(() => userStore.user?.id, (newUserId) => {
 .minimize-btn, .close-btn {
   background: none;
   border: none;
-  color: #7f8c8d;
+  color: var(--color-text-muted);
   cursor: pointer;
   font-size: 16px;
   padding: 4px 8px;
@@ -482,8 +554,8 @@ watch(() => userStore.user?.id, (newUserId) => {
 }
 
 .minimize-btn:hover, .close-btn:hover {
-  background: rgba(212, 175, 55, 0.1);
-  color: #d4af37;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
 }
 
 .panel-content {
@@ -495,8 +567,8 @@ watch(() => userStore.user?.id, (newUserId) => {
 
 .quest-tabs {
   display: flex;
-  background: rgba(248, 249, 250, 0.5);
-  border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .quest-tab {
@@ -505,16 +577,16 @@ watch(() => userStore.user?.id, (newUserId) => {
   background: none;
   border: none;
   cursor: pointer;
-  font-family: 'Cinzel', serif;
+  font-family: var(--font-sans);
   font-weight: 600;
-  color: #7f8c8d;
+  color: var(--color-text-muted);
   transition: all 0.2s ease;
 }
 
 .quest-tab.active {
-  background: rgba(212, 175, 55, 0.1);
-  color: #d4af37;
-  border-bottom: 2px solid #d4af37;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
+  border-bottom: 2px solid var(--color-primary);
 }
 
 .quest-tab:hover:not(.active) {
@@ -533,11 +605,11 @@ watch(() => userStore.user?.id, (newUserId) => {
 .filter-select {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid rgba(212, 175, 55, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
-  font-family: 'Cinzel', serif;
-  background: white;
-  color: #2c3e50;
+  font-family: var(--font-sans);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text);
 }
 
 .quest-list {
@@ -548,20 +620,100 @@ watch(() => userStore.user?.id, (newUserId) => {
   overflow-y: auto;
 }
 
+.onboarding-highlight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.12), rgba(241, 196, 15, 0.08));
+  box-shadow: 0 8px 24px rgba(212, 175, 55, 0.15);
+  margin-bottom: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.onboarding-highlight:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 30px rgba(212, 175, 55, 0.25);
+}
+
+.highlight-icon {
+  font-size: 22px;
+}
+
+.highlight-content {
+  flex: 1;
+}
+
+.highlight-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #d4af37;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.highlight-quest-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.highlight-description {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.highlight-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.level-badge, .xp-badge {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.highlight-cta {
+  background: linear-gradient(135deg, #d4af37, #f1c40f);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.highlight-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(212, 175, 55, 0.4);
+}
+
 .quest-item {
   display: flex;
   align-items: flex-start;
   padding: 12px;
-  border: 1px solid rgba(212, 175, 55, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s ease;
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .quest-item:hover {
-  border-color: rgba(212, 175, 55, 0.4);
-  background: rgba(212, 175, 55, 0.05);
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.12);
   transform: translateY(-1px);
 }
 
@@ -578,13 +730,13 @@ watch(() => userStore.user?.id, (newUserId) => {
 .quest-title {
   font-size: 14px;
   font-weight: 600;
-  color: #2c3e50;
+  color: var(--color-text);
   margin-bottom: 4px;
 }
 
 .quest-description {
   font-size: 12px;
-  color: #7f8c8d;
+  color: var(--color-text-muted);
   margin-bottom: 8px;
   line-height: 1.4;
 }
@@ -596,16 +748,16 @@ watch(() => userStore.user?.id, (newUserId) => {
 }
 
 .xp-reward {
-  background: rgba(212, 175, 55, 0.1);
-  color: #d4af37;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
   padding: 2px 6px;
   border-radius: 4px;
   font-weight: 600;
 }
 
 .difficulty {
-  background: rgba(52, 73, 94, 0.1);
-  color: #34495e;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-muted);
   padding: 2px 6px;
   border-radius: 4px;
   font-weight: 600;
@@ -615,7 +767,7 @@ watch(() => userStore.user?.id, (newUserId) => {
   padding: 6px 12px;
   border: none;
   border-radius: 6px;
-  font-family: 'Cinzel', serif;
+  font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
@@ -623,7 +775,7 @@ watch(() => userStore.user?.id, (newUserId) => {
 }
 
 .accept-btn {
-  background: linear-gradient(135deg, #27ae60, #2ecc71);
+  background: var(--gradient-primary);
   color: white;
 }
 
@@ -638,7 +790,7 @@ watch(() => userStore.user?.id, (newUserId) => {
 }
 
 .complete-btn {
-  background: linear-gradient(135deg, #d4af37, #f1c40f);
+  background: linear-gradient(135deg, #22c55e, #16a34a);
   color: white;
   margin-bottom: 4px;
 }
@@ -649,7 +801,7 @@ watch(() => userStore.user?.id, (newUserId) => {
 }
 
 .abandon-btn {
-  background: linear-gradient(135deg, #e74c3c, #c0392b);
+  background: linear-gradient(135deg, #ef4444, #b91c1c);
   color: white;
   font-size: 10px;
 }
@@ -711,9 +863,9 @@ watch(() => userStore.user?.id, (newUserId) => {
 }
 
 .quest-details {
-  border-top: 1px solid rgba(212, 175, 55, 0.2);
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
   padding: 16px;
-  background: rgba(248, 249, 250, 0.3);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .details-header {
@@ -725,13 +877,13 @@ watch(() => userStore.user?.id, (newUserId) => {
 
 .details-header h3 {
   margin: 0;
-  color: #2c3e50;
+  color: var(--color-text);
   font-size: 16px;
 }
 
 .quest-type-badge {
-  background: rgba(212, 175, 55, 0.1);
-  color: #d4af37;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
   padding: 4px 8px;
   border-radius: 6px;
   font-size: 10px;
@@ -740,7 +892,7 @@ watch(() => userStore.user?.id, (newUserId) => {
 
 .details-content {
   font-size: 12px;
-  color: #7f8c8d;
+  color: var(--color-text-muted);
   line-height: 1.5;
 }
 

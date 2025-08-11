@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -157,6 +158,64 @@ public interface UserQuestRepository extends ArangoRepository<UserQuest, String>
     // ===============================
     // Custom AQL Queries (if needed)
     // ===============================
+
+    /**
+     * Get recent quest completions for feed
+     */
+    @Query("""
+        FOR uq IN user_quests
+        FILTER uq.status == 'COMPLETED' AND uq.completedAt >= DATE_SUBTRACT(DATE_NOW(), @windowDays, 'day')
+        
+        LET user = DOCUMENT(uq._from)
+        LET quest = DOCUMENT(uq._to)
+        
+        SORT uq.completedAt DESC
+        LIMIT @limit
+        
+        RETURN {
+            type: 'quest_completed',
+            timestamp: uq.completedAt,
+            user: { id: user._key, displayName: user.displayName },
+            quest: { id: quest._key, title: quest.title },
+            xp: uq.xpEarned
+        }
+    """)
+    List<Map<String, Object>> findRecentCompletedQuests(@Param("windowDays") int windowDays, @Param("limit") int limit);
+
+    /**
+     * Get leaderboard data by aggregating XP and completed quests
+     */
+    @Query("""
+        FOR uq IN user_quests
+        FILTER uq.status == 'COMPLETED'
+        AND (@windowDays == null OR uq.completedAt >= DATE_SUBTRACT(DATE_NOW(), @windowDays, 'day'))
+        
+        COLLECT userId = uq._from INTO questGroups
+        LET user = DOCUMENT(userId)
+        LET totalXp = SUM(questGroups[*].uq.xpEarned)
+        LET completedCount = LENGTH(questGroups)
+        
+        SORT totalXp DESC, completedCount DESC
+        LIMIT @offset, @limit
+        
+        RETURN {
+            user: {
+                id: user._key,
+                displayName: user.displayName,
+                avatarUrl: user.profilePictureUrl,
+                currentLevel: user.currentLevel
+            },
+            xp: totalXp,
+            completed: completedCount
+        }
+    """)
+    List<Map<String, Object>> getLeaderboard(@Param("windowDays") Integer windowDays, @Param("offset") int offset, @Param("limit") int limit);
+
+    /**
+     * Count total completed quests for stats
+     */
+    @Query("FOR uq IN user_quests FILTER uq.status == 'COMPLETED' COLLECT WITH COUNT INTO total RETURN total")
+    Integer countCompletedQuests();
 
     // Example custom query - can be added later if needed:
     // @Query("FOR userQuest IN user_quests FILTER userQuest.userId == @userId AND userQuest.progress >= @minProgress RETURN userQuest")
