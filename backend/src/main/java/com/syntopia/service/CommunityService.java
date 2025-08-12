@@ -188,8 +188,11 @@ public class CommunityService {
             
             // Create the connection
             Map<String, Object> connection = userCollaborationRepository.createConnection(fromUserId, toUserId, connectionType);
-            
-            return connection;
+            // Normalize fields
+            Map<String, Object> normalized = new HashMap<>(connection);
+            normalized.put("fromUserId", fromUserId);
+            normalized.put("toUserId", toUserId);
+            return normalized;
         } catch (Exception e) {
             throw new RuntimeException("Error sending connection request: " + e.getMessage(), e);
         }
@@ -207,10 +210,44 @@ public class CommunityService {
             
             String status = "accept".equals(action) ? "ACCEPTED" : "DECLINED";
             Map<String, Object> updatedConnection = userCollaborationRepository.updateConnectionStatus(connectionId, status);
-            
+            // Ensure from/to user IDs exist in response if repository omits them
+            updatedConnection.computeIfAbsent("fromUserId", k -> {
+                Object from = updatedConnection.get("_from");
+                if (from instanceof String s) {
+                    int idx = s.lastIndexOf('/') + 1;
+                    return idx > 0 && idx < s.length() ? s.substring(idx) : s;
+                }
+                return null;
+            });
+            updatedConnection.computeIfAbsent("toUserId", k -> {
+                Object to = updatedConnection.get("_to");
+                if (to instanceof String s) {
+                    int idx = s.lastIndexOf('/') + 1;
+                    return idx > 0 && idx < s.length() ? s.substring(idx) : s;
+                }
+                return null;
+            });
             return updatedConnection;
         } catch (Exception e) {
             throw new RuntimeException("Error responding to connection request: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Cancel an outgoing pending connection request
+     */
+    public Map<String, Object> cancelPendingConnection(String connectionId, String userId) {
+        try {
+            Map<String, Object> removed = userCollaborationRepository.deletePendingOutgoing(connectionId, userId);
+            if (removed == null || removed.isEmpty()) {
+                throw new RuntimeException("Pending connection not found or not owned by user");
+            }
+            Map<String, Object> result = new HashMap<>();
+            result.put("cancelled", true);
+            result.put("id", connectionId);
+            return result;
+        } catch (Exception e) {
+            throw new RuntimeException("Error cancelling connection request: " + e.getMessage(), e);
         }
     }
 

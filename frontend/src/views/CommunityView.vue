@@ -216,21 +216,32 @@
                       <div class="connection-role">{{ request.user.selectedRole }} • Level {{ request.user.currentLevel }}</div>
                       <div class="connection-meta">{{ request.isOutgoing ? 'Sent' : 'Received' }} • {{ formatTimeAgo(request.createdAt) }}</div>
                     </div>
-                    <div v-if="!request.isOutgoing" class="connection-actions">
-                      <button 
-                        class="btn btn-primary btn-sm"
-                        @click="respondToRequest(request.id, 'ACCEPT')"
-                        :disabled="respondingTo === request.id"
-                      >
-                        Accept
-                      </button>
-                      <button 
-                        class="btn btn-secondary btn-sm"
-                        @click="respondToRequest(request.id, 'DECLINE')"
-                        :disabled="respondingTo === request.id"
-                      >
-                        Decline
-                      </button>
+                    <div class="connection-actions">
+                      <template v-if="!request.isOutgoing">
+                        <button 
+                          class="btn btn-primary btn-sm"
+                          @click="respondToRequest(request.id, 'ACCEPT')"
+                          :disabled="respondingTo === request.id"
+                        >
+                          Accept
+                        </button>
+                        <button 
+                          class="btn btn-secondary btn-sm"
+                          @click="respondToRequest(request.id, 'DECLINE')"
+                          :disabled="respondingTo === request.id"
+                        >
+                          Decline
+                        </button>
+                      </template>
+                      <template v-else>
+                        <button
+                          class="btn btn-secondary btn-sm"
+                          @click="cancelConnection(request.id)"
+                          :disabled="respondingTo === request.id"
+                        >
+                          Cancel
+                        </button>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -617,7 +628,23 @@ const loadConnections = async () => {
     loadingConnections.value = true
     const result = await communityService.getConnections()
     if (result.success) {
-      const list = result.data?.connections || []
+      const list = (result.data?.connections || []).map((c: any) => {
+        const isOut = c?.direction ? c.direction === 'out' : (c?.fromUserId && userStore.user?.id && c.fromUserId === userStore.user.id)
+        return {
+          id: c.id,
+          type: c.type,
+          status: c.status,
+          createdAt: c.createdAt,
+          respondedAt: c.updatedAt,
+          isOutgoing: !!isOut,
+          user: {
+            displayName: c?.otherUser?.displayName,
+            profilePictureUrl: c?.otherUser?.avatarUrl,
+            selectedRole: c?.otherUser?.selectedRole,
+            currentLevel: c?.otherUser?.currentLevel
+          }
+        }
+      })
       // Adapt into sections expected by template
       const pending = list.filter((c: any) => (c.status || '').toUpperCase() === 'PENDING')
       const accepted = list.filter((c: any) => (c.status || '').toUpperCase() === 'ACCEPTED')
@@ -730,6 +757,25 @@ const respondToRequest = async (requestId: string, action: string) => {
   } catch (error) {
     console.error('Failed to respond to request:', error)
     alert('Failed to respond to request. Please try again.')
+  } finally {
+    respondingTo.value = null
+  }
+}
+
+const cancelConnection = async (connectionId: string) => {
+  try {
+    respondingTo.value = connectionId
+    const result = await communityService.cancelConnectionRequest(connectionId)
+    if (result.success) {
+      loadConnections()
+      alert('Connection request cancelled')
+    } else {
+      console.error('Failed to cancel connection:', result.error)
+      alert('Failed to cancel request')
+    }
+  } catch (e) {
+    console.error('Failed to cancel connection:', e)
+    alert('Failed to cancel request')
   } finally {
     respondingTo.value = null
   }

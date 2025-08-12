@@ -82,6 +82,9 @@ public interface UserCollaborationRepository extends ArangoRepository<Map<String
         
         RETURN {
             id: c._id,
+            fromUserId: PARSE_IDENTIFIER(c._from).key,
+            toUserId: PARSE_IDENTIFIER(c._to).key,
+            direction: c._from == CONCAT('users/', @userId) ? 'out' : 'in',
             type: c.type,
             status: c.status,
             createdAt: c.createdAt,
@@ -138,4 +141,14 @@ public interface UserCollaborationRepository extends ArangoRepository<Map<String
         }
     """)
     List<Map<String, Object>> findRecentAcceptedConnections(@Param("windowDays") int windowDays, @Param("limit") int limit);
+
+    /**
+     * Delete a pending outgoing connection (cancels request) if the requesting user is the originator
+     */
+    @Query("""
+        FOR c IN user_collaborations
+        FILTER c._id == @edgeId AND c._from == CONCAT('users/', @fromUserId) AND c.status == 'PENDING'
+        REMOVE c IN user_collaborations RETURN OLD
+    """)
+    Map<String, Object> deletePendingOutgoing(@Param("edgeId") String edgeId, @Param("fromUserId") String fromUserId);
 }

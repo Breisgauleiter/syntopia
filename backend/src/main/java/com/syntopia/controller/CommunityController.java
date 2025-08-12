@@ -3,15 +3,16 @@ package com.syntopia.controller;
 import com.syntopia.dto.ApiResponse;
 import com.syntopia.dto.CommunityDTO;
 import com.syntopia.model.User;
+import com.syntopia.exception.ResourceNotFoundException;
 import com.syntopia.service.CommunityService;
 import com.syntopia.service.UserService;
-import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import org.springframework.security.core.Authentication;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * CommunityController - REST API for Community Features
@@ -28,6 +29,12 @@ public class CommunityController {
     @Autowired
     private UserService userService;
 
+    private User requireUser(Authentication authentication) {
+        String username = authentication.getName();
+        return userService.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+    }
+
     /**
      * Get community activity feed
      */
@@ -35,29 +42,10 @@ public class CommunityController {
     public ResponseEntity<Map<String, Object>> getCommunityFeed(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            HttpServletRequest request) {
-        try {
-            String email = (String) request.getAttribute("email");
-            if (email == null) {
-                return ResponseEntity.status(401)
-                    .body(ApiResponse.error("Authentication required"));
-            }
-
-            Optional<User> userOpt = userService.findByEmail(email);
-            if (userOpt.isEmpty()) {
-                return ResponseEntity.status(404)
-                    .body(ApiResponse.error("User not found"));
-            }
-
-            User user = userOpt.get();
-            Map<String, Object> feed = communityService.getCommunityFeed(user.getId(), page, size);
-            
-            return ResponseEntity.ok(ApiResponse.success(feed));
-
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                .body(ApiResponse.error("Failed to retrieve community feed", e.getMessage()));
-        }
+            Authentication authentication) {
+        User user = requireUser(authentication);
+        Map<String, Object> feed = communityService.getCommunityFeed(user.getId(), page, size);
+        return ResponseEntity.ok(ApiResponse.success(feed));
     }
 
     /**
@@ -70,29 +58,10 @@ public class CommunityController {
             @RequestParam(required = false) Integer minLevel,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            HttpServletRequest request) {
-        try {
-            String email = (String) request.getAttribute("email");
-            if (email == null) {
-                return ResponseEntity.status(401)
-                    .body(ApiResponse.error("Authentication required"));
-            }
-
-            Optional<User> userOpt = userService.findByEmail(email);
-            if (userOpt.isEmpty()) {
-                return ResponseEntity.status(404)
-                    .body(ApiResponse.error("User not found"));
-            }
-
-            String levelFilter = minLevel != null ? minLevel.toString() : null;
-            Map<String, Object> result = communityService.getUserDirectory(search, role, levelFilter, null, page, size);
-            
-            return ResponseEntity.ok(ApiResponse.success(result));
-
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                .body(ApiResponse.error("Failed to retrieve user directory", e.getMessage()));
-        }
+            Authentication authentication) {
+        String levelFilter = minLevel != null ? minLevel.toString() : null;
+        Map<String, Object> result = communityService.getUserDirectory(search, role, levelFilter, null, page, size);
+        return ResponseEntity.ok(ApiResponse.success(result));
     }
 
     /**
@@ -100,56 +69,16 @@ public class CommunityController {
      */
     @PostMapping("/connect")
     public ResponseEntity<Map<String, Object>> sendConnectionRequest(
-            @RequestBody CommunityDTO.ConnectionRequestDTO requestData,
-            HttpServletRequest request) {
-        try {
-            String email = (String) request.getAttribute("email");
-            if (email == null) {
-                return ResponseEntity.status(401)
-                    .body(ApiResponse.error("Authentication required"));
-            }
+            @Valid @RequestBody CommunityDTO.ConnectionRequestDTO requestData,
+            Authentication authentication) {
+    User fromUser = requireUser(authentication);
 
-            Optional<User> userOpt = userService.findByEmail(email);
-            if (userOpt.isEmpty()) {
-                return ResponseEntity.status(404)
-                    .body(ApiResponse.error("User not found"));
-            }
-
-            User fromUser = userOpt.get();
-            
-            if (requestData.getToUserId() == null) {
-                return ResponseEntity.status(400)
-                    .body(ApiResponse.error("Target user ID is required"));
-            }
-            
-            if (requestData.getConnectionType() == null) {
-                return ResponseEntity.status(400)
-                    .body(ApiResponse.error("Connection type is required"));
-            }
-
-            Map<String, Object> result = communityService.sendConnectionRequest(
-                fromUser.getId(), 
-                requestData.getToUserId(), 
-                requestData.getConnectionType()
-            );
-            
-            return ResponseEntity.ok(ApiResponse.success(result));
-
-        } catch (RuntimeException e) {
-            if (e.getMessage().contains("already exists")) {
-                return ResponseEntity.status(409)
-                    .body(ApiResponse.error(e.getMessage()));
-            } else if (e.getMessage().contains("not found")) {
-                return ResponseEntity.status(404)
-                    .body(ApiResponse.error(e.getMessage()));
-            } else {
-                return ResponseEntity.status(400)
-                    .body(ApiResponse.error(e.getMessage()));
-            }
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                .body(ApiResponse.error("Failed to send connection request", e.getMessage()));
-        }
+        Map<String, Object> result = communityService.sendConnectionRequest(
+            fromUser.getId(),
+            requestData.getToUserId(),
+            requestData.getConnectionType()
+        );
+        return ResponseEntity.ok(ApiResponse.success(result));
     }
 
     /**
@@ -158,50 +87,27 @@ public class CommunityController {
     @PutMapping("/connect/{connectionId}")
     public ResponseEntity<Map<String, Object>> respondToConnectionRequest(
             @PathVariable String connectionId,
-            @RequestBody CommunityDTO.ConnectionResponseDTO responseData,
-            HttpServletRequest request) {
-        try {
-            String email = (String) request.getAttribute("email");
-            if (email == null) {
-                return ResponseEntity.status(401)
-                    .body(ApiResponse.error("Authentication required"));
-            }
+            @Valid @RequestBody CommunityDTO.ConnectionResponseDTO responseData,
+            Authentication authentication) {
+        User user = requireUser(authentication);
+        Map<String, Object> result = communityService.respondToConnectionRequest(
+            connectionId,
+            responseData.getAction(),
+            user.getId()
+        );
+        return ResponseEntity.ok(ApiResponse.success(result));
+    }
 
-            Optional<User> userOpt = userService.findByEmail(email);
-            if (userOpt.isEmpty()) {
-                return ResponseEntity.status(404)
-                    .body(ApiResponse.error("User not found"));
-            }
-
-            if (responseData.getAction() == null || 
-                (!"accept".equals(responseData.getAction()) && !"decline".equals(responseData.getAction()))) {
-                return ResponseEntity.status(400)
-                    .body(ApiResponse.error("Invalid action. Must be 'accept' or 'decline'"));
-            }
-
-            Map<String, Object> result = communityService.respondToConnectionRequest(
-                connectionId, 
-                responseData.getAction(), 
-                userOpt.get().getId()
-            );
-            
-            return ResponseEntity.ok(ApiResponse.success(result));
-
-        } catch (RuntimeException e) {
-            if (e.getMessage().contains("not found")) {
-                return ResponseEntity.status(404)
-                    .body(ApiResponse.error(e.getMessage()));
-            } else if (e.getMessage().contains("unauthorized")) {
-                return ResponseEntity.status(403)
-                    .body(ApiResponse.error(e.getMessage()));
-            } else {
-                return ResponseEntity.status(400)
-                    .body(ApiResponse.error(e.getMessage()));
-            }
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                .body(ApiResponse.error("Failed to respond to connection request", e.getMessage()));
-        }
+    /**
+     * Cancel an outgoing pending connection request
+     */
+    @DeleteMapping("/connect/{connectionId}")
+    public ResponseEntity<Map<String, Object>> cancelPendingConnection(
+            @PathVariable String connectionId,
+            Authentication authentication) {
+        User user = requireUser(authentication);
+        Map<String, Object> result = communityService.cancelPendingConnection(connectionId, user.getId());
+        return ResponseEntity.ok(ApiResponse.success(result));
     }
 
     /**
@@ -213,29 +119,10 @@ public class CommunityController {
             @RequestParam(defaultValue = "all") String direction,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            HttpServletRequest request) {
-        try {
-            String email = (String) request.getAttribute("email");
-            if (email == null) {
-                return ResponseEntity.status(401)
-                    .body(ApiResponse.error("Authentication required"));
-            }
-
-            Optional<User> userOpt = userService.findByEmail(email);
-            if (userOpt.isEmpty()) {
-                return ResponseEntity.status(404)
-                    .body(ApiResponse.error("User not found"));
-            }
-
-            User user = userOpt.get();
-            Map<String, Object> connections = communityService.getUserConnections(user.getId(), status, direction, page, size);
-            
-            return ResponseEntity.ok(ApiResponse.success(connections));
-
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                .body(ApiResponse.error("Failed to retrieve connections", e.getMessage()));
-        }
+            Authentication authentication) {
+    User user = requireUser(authentication);
+        Map<String, Object> connections = communityService.getUserConnections(user.getId(), status, direction, page, size);
+        return ResponseEntity.ok(ApiResponse.success(connections));
     }
 
     /**
@@ -246,29 +133,10 @@ public class CommunityController {
             @RequestParam(defaultValue = "false") boolean mine,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            HttpServletRequest request) {
-        try {
-            String email = (String) request.getAttribute("email");
-            if (email == null) {
-                return ResponseEntity.status(401)
-                    .body(ApiResponse.error("Authentication required"));
-            }
-
-            Optional<User> userOpt = userService.findByEmail(email);
-            if (userOpt.isEmpty()) {
-                return ResponseEntity.status(404)
-                    .body(ApiResponse.error("User not found"));
-            }
-
-            User user = userOpt.get();
-            Map<String, Object> result = communityService.getCommunityProjects(user.getId(), mine, page, size);
-            
-            return ResponseEntity.ok(ApiResponse.success(result));
-
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                .body(ApiResponse.error("Failed to retrieve community projects", e.getMessage()));
-        }
+            Authentication authentication) {
+    User user = requireUser(authentication);
+        Map<String, Object> result = communityService.getCommunityProjects(user.getId(), mine, page, size);
+        return ResponseEntity.ok(ApiResponse.success(result));
     }
 
     /**
@@ -276,69 +144,20 @@ public class CommunityController {
      */
     @PostMapping("/projects")
     public ResponseEntity<Map<String, Object>> createCommunityProject(
-            @RequestBody CommunityDTO.CreateProjectDTO projectData,
-            HttpServletRequest request) {
-        try {
-            String email = (String) request.getAttribute("email");
-            if (email == null) {
-                return ResponseEntity.status(401)
-                    .body(ApiResponse.error("Authentication required"));
-            }
-
-            Optional<User> userOpt = userService.findByEmail(email);
-            if (userOpt.isEmpty()) {
-                return ResponseEntity.status(404)
-                    .body(ApiResponse.error("User not found"));
-            }
-
-            User creator = userOpt.get();
-            
-            if (projectData.getTitle() == null || projectData.getTitle().trim().isEmpty()) {
-                return ResponseEntity.status(400)
-                    .body(ApiResponse.error("Project title is required"));
-            }
-            
-            if (projectData.getDescription() == null || projectData.getDescription().trim().isEmpty()) {
-                return ResponseEntity.status(400)
-                    .body(ApiResponse.error("Project description is required"));
-            }
-            
-            Map<String, Object> result = communityService.createCommunityProject(creator.getId(), projectData);
-            
-            return ResponseEntity.ok(ApiResponse.success(result));
-
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                .body(ApiResponse.error("Failed to create community project", e.getMessage()));
-        }
+            @Valid @RequestBody CommunityDTO.CreateProjectDTO projectData,
+            Authentication authentication) {
+    User creator = requireUser(authentication);
+        Map<String, Object> result = communityService.createCommunityProject(creator.getId(), projectData);
+        return ResponseEntity.ok(ApiResponse.success(result));
     }
 
     /**
      * Get community statistics
      */
     @GetMapping("/stats")
-    public ResponseEntity<Map<String, Object>> getCommunityStats(HttpServletRequest request) {
-        try {
-            String email = (String) request.getAttribute("email");
-            if (email == null) {
-                return ResponseEntity.status(401)
-                    .body(ApiResponse.error("Authentication required"));
-            }
-
-            Optional<User> userOpt = userService.findByEmail(email);
-            if (userOpt.isEmpty()) {
-                return ResponseEntity.status(404)
-                    .body(ApiResponse.error("User not found"));
-            }
-
-            Map<String, Object> stats = communityService.getCommunityStats();
-            
-            return ResponseEntity.ok(ApiResponse.success(stats));
-
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                .body(ApiResponse.error("Failed to retrieve community statistics", e.getMessage()));
-        }
+    public ResponseEntity<Map<String, Object>> getCommunityStats(Authentication authentication) {
+        Map<String, Object> stats = communityService.getCommunityStats();
+        return ResponseEntity.ok(ApiResponse.success(stats));
     }
 
     /**
@@ -349,14 +168,7 @@ public class CommunityController {
             @RequestParam(defaultValue = "all") String window,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        try {
-            Map<String, Object> result = communityService.getCommunityLeaderboard(window, page, size);
-            
-            return ResponseEntity.ok(ApiResponse.success(result));
-
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                .body(ApiResponse.error("Failed to retrieve leaderboard", e.getMessage()));
-        }
+        Map<String, Object> result = communityService.getCommunityLeaderboard(window, page, size);
+        return ResponseEntity.ok(ApiResponse.success(result));
     }
 }

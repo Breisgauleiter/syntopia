@@ -83,6 +83,15 @@ export class CommunityService {
   if (!res.success) return res as ApiResponse<any>
   return { success: true, data: (res.data as any)?.data || (res.data as any) || {} }
   }
+
+  /**
+   * Cancel an outgoing pending connection
+   */
+  async cancelConnectionRequest(connectionId: string): Promise<ApiResponse<{ cancelled: boolean }>> {
+    const res = await api.delete(`/community/connect/${connectionId}`)
+    if (!res.success) return res as ApiResponse<any>
+    return { success: true, data: (res.data as any)?.data || (res.data as any) || { cancelled: true } }
+  }
   
   /**
    * Get user's connections with filtering

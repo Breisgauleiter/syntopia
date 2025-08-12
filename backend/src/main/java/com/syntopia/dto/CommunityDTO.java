@@ -1,5 +1,7 @@
 package com.syntopia.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -13,8 +15,11 @@ public class CommunityDTO {
      * DTO for connection requests
      */
     public static class ConnectionRequestDTO {
-        private String toUserId;
-        private String connectionType; // 'friend', 'mentor', 'collaborator'
+    @NotBlank(message = "toUserId is required")
+    private String toUserId;
+    @NotBlank(message = "connectionType is required")
+    @Pattern(regexp = "friend|mentor|collaborator", message = "connectionType must be friend, mentor, or collaborator")
+    private String connectionType; // 'friend', 'mentor', 'collaborator'
 
         public ConnectionRequestDTO() {}
 
@@ -34,7 +39,9 @@ public class CommunityDTO {
      * DTO for connection responses (accept/decline)
      */
     public static class ConnectionResponseDTO {
-        private String action; // 'accept' or 'decline'
+    @NotBlank(message = "action is required")
+    @Pattern(regexp = "accept|decline", message = "action must be 'accept' or 'decline'")
+    private String action; // 'accept' or 'decline'
 
         public ConnectionResponseDTO() {}
 
@@ -78,10 +85,13 @@ public class CommunityDTO {
      * DTO for creating new projects
      */
     public static class CreateProjectDTO {
-        private String title;
-        private String description;
+    @NotBlank(message = "title is required")
+    private String title;
+    @NotBlank(message = "description is required")
+    private String description;
         private List<String> tags;
-        private String visibility; // 'public' or 'private'
+    @Pattern(regexp = "public|private", message = "visibility must be 'public' or 'private'")
+    private String visibility; // 'public' or 'private'
 
         public CreateProjectDTO() {}
 
