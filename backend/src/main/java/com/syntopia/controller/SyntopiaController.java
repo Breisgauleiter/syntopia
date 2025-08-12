@@ -2,6 +2,7 @@ package com.syntopia.controller;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.syntopia.dto.ApiResponse;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -22,12 +23,12 @@ public class SyntopiaController {
      */
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> health() {
-        Map<String, Object> response = new HashMap<>();
-        response.put("status", "UP");
-        response.put("timestamp", LocalDateTime.now());
-        response.put("service", "Syntopia Backend");
-        response.put("version", "1.0.0-SNAPSHOT");
-        return ResponseEntity.ok(response);
+        Map<String, Object> data = new HashMap<>();
+        data.put("status", "UP");
+        data.put("timestamp", LocalDateTime.now());
+        data.put("service", "Syntopia Backend");
+        data.put("version", "1.0.0-SNAPSHOT");
+        return ResponseEntity.ok(ApiResponse.success(data));
     }
 
     /**
@@ -35,17 +36,17 @@ public class SyntopiaController {
      */
     @GetMapping("/")
     public ResponseEntity<Map<String, Object>> welcome() {
-        Map<String, Object> response = new HashMap<>();
-        response.put("message", "Welcome to Syntopia - Sacred Geometry Platform");
-        response.put("description", "Explore the divine mathematics of creation through interactive visualizations");
-        response.put("timestamp", LocalDateTime.now());
-        response.put("endpoints", Map.of(
+        Map<String, Object> data = new HashMap<>();
+        data.put("message", "Welcome to Syntopia - Sacred Geometry Platform");
+        data.put("description", "Explore the divine mathematics of creation through interactive visualizations");
+        data.put("timestamp", LocalDateTime.now());
+        data.put("endpoints", Map.of(
                 "health", "/api/health",
                 "auth", "/api/auth/*",
                 "geometry", "/api/geometry/*",
                 "users", "/api/users/*"
         ));
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(ApiResponse.success(data));
     }
 
     /**
@@ -53,18 +54,19 @@ public class SyntopiaController {
      */
     @GetMapping("/info")
     public ResponseEntity<Map<String, Object>> info() {
-        Map<String, Object> response = new HashMap<>();
-        response.put("name", "Syntopia Backend API");
-        response.put("version", "1.0.0-SNAPSHOT");
-        response.put("description", "Backend service for Syntopia platform");
-        response.put("features", new String[]{
+        Map<String, Object> data = new HashMap<>();
+        data.put("name", "Syntopia Backend API");
+        data.put("version", "1.0.0-SNAPSHOT");
+        data.put("description", "Backend service for Syntopia platform");
+        data.put("features", new String[]{
                 "JWT Authentication",
                 "OAuth2 GitHub Integration",
                 "ArangoDB TAO Architecture",
                 "Sacred Geometry Data Management",
                 "Real-time Visualization Support"
         });
-        response.put("timestamp", LocalDateTime.now());
-        return ResponseEntity.ok(response);
+        data.put("timestamp", LocalDateTime.now());
+        return ResponseEntity.ok(ApiResponse.success(data));
     }
+
 }

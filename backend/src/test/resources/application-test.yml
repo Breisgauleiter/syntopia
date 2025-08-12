@@ -1,0 +1,16 @@
+# Test profile overrides
+logging:
+  level:
+    root: WARN
+    org.springframework.security: INFO
+    com.syntopia: INFO
+spring:
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  main:
+    banner-mode: off
+
+jwt:
+  secret: test-secret-key-test-secret-key-32-bytes!!
+  expiration: 3600000
+  refresh-expiration: 7200000
