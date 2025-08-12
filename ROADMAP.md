@@ -22,10 +22,14 @@
   - Models/Repo: `Quest`, `UserQuest`, `QuestRepository`, `UserQuestRepository` present
   - Backend: `QuestController`/`QuestService` implemented; GitHub quest endpoints scaffolded
   - Frontend: `quest.service.ts` with types; `QuestsView.vue` + Quest components integrated
+  - Recent alignment: ✅ UserQuestRepository AQL now inlines `quest` data (MERGE) so frontend always has quest details
+  - Recent alignment: ✅ Frontend maps `UserQuest.status` to quest.status for consistent button states; reduced full reloads
   - Known gaps
-  - Progress/verification: progress update endpoint exists; verification workflow/placeholders not finalized
-  - Listing helpers: endpoints for user “active/completed/available” are present; verify consistency and pagination
-  - Onboarding generator: `OnboardingQuestGenerator` is stubbed (generate methods incomplete)
+    - Verification UI: backend verification endpoint & USER_VERIFIED status added; frontend needs verify action/button & optimistic update
+    - Pagination adoption: backend pagination + UserQuestDTO (explicit userId/questId) implemented; frontend service/view must consume paginated ApiResponse
+    - Onboarding generator: `OnboardingQuestGenerator` is stubbed (generate methods incomplete)
+    - Testing: add backend tests (repository embedding, verification transition) & frontend tests (status mapping, pagination, verification)
+    - Cleanup: remove legacy derivation logic once quest.service.ts updated for DTO
   - Frontend activation: ✅ onboarding CTAs now call `POST /api/onboarding/accept`; tracker/panels refresh active list
 
 - Profile System
@@ -43,6 +47,9 @@
   - Known gaps
     - Testing: Integration tests for community flows and pagination edge cases
     - Connections UI flow: Validate request → pending → accept/decline end-to-end in UI
+    - Pending connection DTO: ensure payload includes `fromUserId` and `toUserId` so UI can render directionality
+
+  - Testing: Backend MockMvc and frontend Vitest + Playwright scaffolding added; backend and unit tests green locally; see TESTING.md for commands
 
 - Cross-cutting
   - Response pattern: Aim to standardize on a unified `ApiResponse` across controllers (partially applied)
@@ -75,8 +82,9 @@
 4) Quest UX and endpoints: small but critical
 - Endpoints for “list active/completed/user-available”: ✅ available (verify naming/pagination)
 - UX polish: ✅ role filter, ✅ glassmorphism on tracker/panels, ✅ onboarding surfaced/pinned, ✅ active count correct with onboarding fallback
-- Remaining: Implement verification placeholders (progress endpoint exists) and any client updates
-- Acceptance: QuestsView shows active/completed consistently for `testuser`; progress updates persist; verification flagged where applicable
+- Backend refactor: ✅ UserQuestController now uses ApiResponse, pagination, DTO (UserQuestDTO), verification endpoint (`POST /api/user-quests/{questId}/verify`)
+- Remaining (frontend): wire verification button, adapt to paginated `{ data, pagination }` shape, update quest.service.ts to use `userQuestId`
+- Acceptance: QuestsView shows active/completed consistently; verification action transitions to USER_VERIFIED without full reload
 
 5) ✅ Onboarding activation wiring (frontend) — COMPLETED
 - CTAs in QuestPanel/QuestTracker/QuestsView call `POST /api/onboarding/accept`
@@ -86,6 +94,7 @@
 6) Community connections flow validation — NEW
 - Send a connection request, confirm it appears as pending, and simulate accept/decline
 - Acceptance: Request/accept/decline reflected in `/connections` and feed where applicable
+- Acceptance: Request/accept/decline reflected in `/connections` and feed where applicable; DTO exposes `fromUserId` and `toUserId`
 
 ---
 
@@ -97,12 +106,17 @@
   - Acceptance: Each of 7 roles × 4 levels produces quests with XP per Fibonacci scale; visible in filters
 
 - Unified ApiResponse pattern
-  - Confirm/finish `ApiResponse` and refactor controllers to use it consistently
-  - Acceptance: All controllers return `{ success, data, error, pagination? }`
+  - Progress: UserQuestController migrated (pagination + DTO). Remaining controllers (Profile, Quest, Community) to standardize.
+  - Acceptance: All controllers return `{ success, data, error?, pagination? }`
 
 - Basic notifications (non-realtime)
   - Add server-side events (initial), or simple polling for community events
   - Acceptance: User sees new connection requests and quest updates without refresh (polling acceptable)
+
+- CI workflows (unit + lint; optional E2E)
+  - Add GitHub Actions to run backend unit tests (mvn -q -DskipITs=false test) and frontend unit tests (Vitest) on PRs
+  - Optional: gated Playwright E2E via manual dispatch or label to keep PRs fast
+  - Acceptance: PRs show green checks for backend and frontend unit tests; optional E2E job runnable on demand
 
 ---
 
@@ -160,6 +174,8 @@ Milestone C — Onboarding Generator + Quest Lists (end of Week 4)
   - Mitigation: Index review, EXPLAIN plans, paginate aggressively
 - Risk: Contract mismatches in community flows
   - Mitigation: Update service contracts first; generate quick integration tests
+ - Risk: Local Arango connectivity ("No host has been set!") can break backend boot
+   - Mitigation: Provide defaults in `application.yml` via env (ARANGO_HOST/PORT/DB/USER/PASS) and prefer `docker-compose` for local
 
 ---
 
@@ -180,11 +196,13 @@ Milestone C — Onboarding Generator + Quest Lists (end of Week 4)
 1. ✅ ~~Align community service contracts (frontend + backend) and remove direct calls~~ **COMPLETED**
 2. ✅ ~~Implement community AQL + repositories; wire real data for feed/connections/projects/leaderboard~~ **COMPLETED**
 3. ✅ ~~Align frontend `community.service.ts` with new backend DTOs and test integration~~ **COMPLETED**
-4. Community connections E2E: request → pending → accept/decline; reflect in UI and feed
-5. Quests progress/complete flow for onboarding quest; keep lists consistent in QuestsView
-6. Profile achievements/social: implement TAO queries; finish profile save handling
-7. OnboardingQuestGenerator implementation + seeding path
-8. Sweep for ApiResponse consistency; add minimal tests/docs
+4. ✅ Quest user endpoints refactor: DTO + pagination + verification (backend)
+5. Community connections E2E: request → pending → accept/decline; reflect in UI and feed
+6. Quests frontend adoption of DTO/pagination + verification UI & tests
+7. Profile achievements/social: implement TAO queries; finish profile save handling
+8. OnboardingQuestGenerator implementation + seeding path
+9. Sweep for ApiResponse consistency across remaining controllers; add minimal tests/docs
+10. CI workflows for backend/frontend unit tests (optional E2E) to protect PRs
 
 ---
 

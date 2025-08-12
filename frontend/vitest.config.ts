@@ -13,7 +13,18 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
-  setupFiles: ['./vitest.setup.ts'],
-  exclude: ['tests/e2e/**']
+    setupFiles: ['./vitest.setup.ts'],
+    // Only run our project tests; avoid executing dependency package tests in node_modules
+    include: [
+      'src/**/*.{test,spec}.{js,ts,jsx,tsx}',
+      'tests/unit/**/*.{test,spec}.{js,ts,jsx,tsx}',
+      'src/tests/**/*.{test,spec}.{js,ts,jsx,tsx}'
+    ],
+    exclude: [
+      'node_modules/**',
+      'dist/**',
+      'coverage/**',
+      'tests/e2e/**'
+    ]
   }
 })

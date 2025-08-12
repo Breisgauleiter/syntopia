@@ -80,6 +80,29 @@ All interface elements follow sacred geometry principles:
 - [Backend](./backend/README.md) - Spring Boot API
 - [Database](./database/README.md) - ArangoDB setup
 
+## API responses and errors
+
+All backend endpoints use a unified ApiResponse envelope:
+
+- Success with data:
+	{ "success": true, "data": { ... } }
+- Success with message and data:
+	{ "success": true, "message": "Message", "data": { ... } }
+- Error:
+	{ "success": false, "error": "Reason" }
+- Error with details:
+	{ "success": false, "error": "Reason", "details": { ... } }
+- Paginated list:
+	{ "success": true, "data": [ ... ], "pagination": { "page": 0, "size": 20, "total": 123, "totalPages": 7, "hasNext": true, "hasPrev": false } }
+
+Validation errors (400) are returned as:
+{ "success": false, "error": "Validation failed", "details": { "validationErrors": { "fieldA": "must not be blank" } } }
+
+Unauthorized (401) responses (controller-thrown or security filter entry point):
+{ "success": false, "error": "Authentication required" }
+
+Centralized handling is implemented via GlobalExceptionHandler.
+
 ## 📄 License
 MIT License - See [LICENSE](./LICENSE) for details
 
