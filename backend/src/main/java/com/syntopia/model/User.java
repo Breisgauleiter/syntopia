@@ -8,7 +8,6 @@ import org.springframework.data.annotation.Id;
 import java.time.LocalDateTime;
 import java.util.Set;
 import java.util.List;
-import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
 
@@ -47,6 +46,8 @@ public class User {
     private String bio; // User biography/description
     private String location; // User location
     private String website; // Personal website URL
+    private String twitterHandle; // Twitter / X handle without @
+    private String linkedinUrl; // Full LinkedIn profile URL
     private List<String> achievements; // List of achievement IDs
     private Map<String, Object> preferences; // Sacred geometry and UI preferences
     private Map<String, Object> stats; // User statistics (login streak, etc.)
@@ -245,6 +246,12 @@ public class User {
         this.website = website;
     }
 
+    public String getTwitterHandle() { return twitterHandle; }
+    public void setTwitterHandle(String twitterHandle) { this.twitterHandle = twitterHandle; }
+
+    public String getLinkedinUrl() { return linkedinUrl; }
+    public void setLinkedinUrl(String linkedinUrl) { this.linkedinUrl = linkedinUrl; }
+
     public List<String> getAchievements() {
         return achievements;
     }
@@ -339,6 +346,8 @@ public class User {
         Map<String, String> socialLinks = new HashMap<>();
         if (website != null) socialLinks.put("website", website);
         if (githubId != null) socialLinks.put("github", "https://github.com/" + githubId);
+        if (twitterHandle != null) socialLinks.put("twitter", "https://x.com/" + twitterHandle.replace("@", ""));
+        if (linkedinUrl != null) socialLinks.put("linkedin", linkedinUrl);
         return socialLinks;
     }
 
@@ -348,6 +357,18 @@ public class User {
             String githubUrl = socialLinks.get("github");
             if (githubUrl != null && githubUrl.contains("github.com/")) {
                 this.githubId = githubUrl.substring(githubUrl.lastIndexOf("/") + 1);
+            }
+            String twitterUrl = socialLinks.get("twitter");
+            if (twitterUrl != null) {
+                if (twitterUrl.contains("x.com/") || twitterUrl.contains("twitter.com/")) {
+                    this.twitterHandle = twitterUrl.substring(twitterUrl.lastIndexOf("/") + 1).replace("@", "");
+                } else {
+                    this.twitterHandle = twitterUrl.replace("@", "");
+                }
+            }
+            String linkedin = socialLinks.get("linkedin");
+            if (linkedin != null && linkedin.contains("linkedin.")) {
+                this.linkedinUrl = linkedin;
             }
         }
     }

@@ -80,16 +80,43 @@
             </div>
 
             <!-- Achievements Section -->
-            <div class="profile-card">
+            <div class="profile-card achievements-card">
               <h3><i class="fas fa-trophy"></i> Achievements</h3>
-              <div v-if="unlockedAchievements.length > 0" class="badges-grid">
-                <div 
-                  v-for="achievement in unlockedAchievements" 
-                  :key="achievement.id"
-                  class="badge-item earned"
-                >
-                  <div class="badge-icon">{{ achievement.icon }}</div>
-                  <div class="badge-name">{{ achievement.name }}</div>
+              <div v-if="achievements.length" class="achievements-wrapper">
+                <div class="badges-grid">
+                  <div 
+                    v-for="achievement in unlockedAchievements" 
+                    :key="achievement.id"
+                    class="badge-item earned"
+                    :title="achievement.description"
+                  >
+                    <div class="badge-icon">{{ achievement.icon }}</div>
+                    <div class="badge-name">{{ achievement.title || achievement.name }}</div>
+                    <div v-if="achievement.progressPercent !== undefined" class="mini-progress">
+                      <div class="mini-progress-bar">
+                        <div class="mini-progress-fill" :style="{ width: achievement.progressPercent + '%' }"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div 
+                    v-for="achievement in lockedAchievements.slice(0, 6)" 
+                    :key="achievement.id + '-locked'"
+                    class="badge-item locked"
+                    :title="achievement.description"
+                  >
+                    <div class="badge-icon">{{ achievement.icon }}</div>
+                    <div class="badge-name">{{ achievement.title || achievement.name }}</div>
+                    <div v-if="achievement.progressPercent !== undefined" class="mini-progress">
+                      <div class="mini-progress-bar">
+                        <div class="mini-progress-fill" :style="{ width: achievement.progressPercent + '%' }"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="achievement-stats">
+                  <span>{{ unlockedAchievements.length }} unlocked</span>
+                  <span>•</span>
+                  <span>{{ lockedAchievements.length }} in progress/locked</span>
                 </div>
               </div>
               <p v-else class="no-achievements">Complete quests to earn achievements!</p>
@@ -183,6 +210,21 @@
                 </div>
 
                 <div class="form-group">
+                  <label>Social Links</label>
+                  <div class="social-links-editor">
+                    <div class="social-link-row" v-for="platform in socialPlatforms" :key="platform.key">
+                      <span class="platform-label">{{ platform.label }}</span>
+                      <input 
+                        v-model="editForm.socialLinks[platform.key]"
+                        :placeholder="platform.placeholder"
+                        class="form-input"
+                        type="url"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="form-group">
                   <label class="checkbox-label">
                     <input 
                       v-model="editForm.isProfilePublic" 
@@ -259,7 +301,7 @@ interface Achievement {
 
 const profile = ref<ProfileData | null>(null)
 const socialData = ref<SocialData | null>(null)
-const achievements = ref<Achievement[]>([])
+const achievements = ref<any[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 const activeTab = ref('overview')
@@ -278,16 +320,22 @@ const tabs = [
 const editForm = ref({
   displayName: '',
   bio: '',
-  isProfilePublic: true
+  isProfilePublic: true,
+  socialLinks: {
+    twitter: '',
+    github: '',
+    linkedin: ''
+  } as Record<string, string>
 })
 
-const unlockedAchievements = computed(() => 
-  achievements.value.filter(a => a.isUnlocked)
-)
+const socialPlatforms = [
+  { key: 'twitter', label: 'Twitter/X', placeholder: 'https://x.com/username' },
+  { key: 'github', label: 'GitHub', placeholder: 'https://github.com/username' },
+  { key: 'linkedin', label: 'LinkedIn', placeholder: 'https://www.linkedin.com/in/username/' }
+]
 
-const lockedAchievements = computed(() => 
-  achievements.value.filter(a => !a.isUnlocked)
-)
+const unlockedAchievements = computed(() => achievements.value.filter(a => a.status === 'completed'))
+const lockedAchievements = computed(() => achievements.value.filter(a => a.status !== 'completed'))
 
 const levelProgress = computed(() => {
   if (!profile.value) return 0
@@ -313,6 +361,9 @@ const loadProfile = async () => {
       editForm.value.displayName = result.data.displayName || ''
       editForm.value.bio = result.data.bio || ''
       editForm.value.isProfilePublic = result.data.isProfilePublic !== false
+      if (result.data.socialLinks) {
+        editForm.value.socialLinks = { ...editForm.value.socialLinks, ...result.data.socialLinks }
+      }
     } else {
       error.value = result.error?.message || 'Failed to load profile'
     }
@@ -361,7 +412,7 @@ const loadAchievements = async () => {
     if (result.success) {
       // Backend returns an object with { achievements: [...], totalAchievements, completedAchievements }
       const d: any = result.data || {}
-      achievements.value = Array.isArray(d.achievements) ? d.achievements : []
+  achievements.value = Array.isArray(d.achievements) ? d.achievements : []
     }
   } catch (error) {
     console.error('Failed to load achievements:', error)
@@ -413,7 +464,8 @@ const saveSettings = async () => {
     const updateData = {
       displayName: editForm.value.displayName,
       bio: editForm.value.bio,
-      isProfilePublic: editForm.value.isProfilePublic
+      isProfilePublic: editForm.value.isProfilePublic,
+      socialLinks: editForm.value.socialLinks
     }
     
     const result = await profileService.updateProfile(updateData)
@@ -437,6 +489,9 @@ const resetForm = () => {
     editForm.value.displayName = profile.value.displayName || ''
     editForm.value.bio = profile.value.bio || ''
     editForm.value.isProfilePublic = profile.value.isProfilePublic !== false
+    if (profile.value.socialLinks) {
+      editForm.value.socialLinks = { ...editForm.value.socialLinks, ...profile.value.socialLinks }
+    }
   }
 }
 
@@ -491,6 +546,44 @@ onMounted(() => {
   margin-bottom: 2rem;
   line-height: 1.6;
 }
+
+.badge-item.locked {
+  opacity: 0.55;
+  filter: grayscale(0.6);
+}
+
+.achievement-stats {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  margin-top: 0.75rem;
+  justify-content: center;
+  opacity: 0.75;
+}
+
+.social-links-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.social-link-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.platform-label {
+  font-size: 0.75rem;
+  opacity: 0.8;
+  font-weight: 500;
+}
+
+.mini-progress { width:100%; margin-top:0.15rem; }
+.mini-progress-bar { width:100%; height:4px; background:rgba(255,255,255,0.15); border-radius:2px; overflow:hidden; }
+.mini-progress-fill { height:100%; background:linear-gradient(90deg,#4ade80,#2563eb); transition:width .3s ease; }
 
 .coming-soon ul {
   text-align: left;

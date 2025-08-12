@@ -70,7 +70,17 @@ public class ProfileService {
                 stats.put("connectionsCount", 0);
             }
             stats.put("projectsCount", 0);
-            stats.put("questsCompleted", 0);
+            // Real quest completion count (completed or verified)
+            try {
+                long completed = userQuestRepository.countByUserIdAndStatus(user.getId(), com.syntopia.model.UserQuest.UserQuestStatus.USER_COMPLETED);
+                long verified = userQuestRepository.countByUserIdAndStatus(user.getId(), com.syntopia.model.UserQuest.UserQuestStatus.USER_VERIFIED);
+                int totalCompleted = (int) (completed + verified);
+                stats.put("questsCompleted", totalCompleted);
+                profile.put("questsCompleted", totalCompleted);
+            } catch (Exception e) {
+                stats.put("questsCompleted", 0);
+                profile.put("questsCompleted", 0);
+            }
             profile.put("stats", stats);
             
             return profile;
@@ -206,13 +216,17 @@ public class ProfileService {
                 if (questCount >= 10) {
                     achievements.add(createAchievement(
                         "quest_adept", "Quest Adept", "Completed 10 quests", 
-                        "⭐", "completed", 250
+                        "⭐", "completed", 250, 10, 10
                     ));
                 } else if (questCount >= 5) {
-                    // Show as in-progress if they have some quests
                     achievements.add(createAchievement(
                         "quest_adept", "Quest Adept", "Complete 10 quests (" + questCount + "/10)", 
-                        "⭐", "in_progress", 250
+                        "⭐", "in_progress", 250, questCount, 10
+                    ));
+                } else {
+                    achievements.add(createAchievement(
+                        "quest_adept", "Quest Adept", "Complete 10 quests (" + questCount + "/10)", 
+                        "⭐", "locked", 250, questCount, 10
                     ));
                 }
                 
@@ -220,12 +234,17 @@ public class ProfileService {
                 if (questCount >= 25) {
                     achievements.add(createAchievement(
                         "quest_master", "Quest Master", "Completed 25 quests", 
-                        "👑", "completed", 500
+                        "👑", "completed", 500, 25, 25
                     ));
                 } else if (questCount >= 10) {
                     achievements.add(createAchievement(
                         "quest_master", "Quest Master", "Complete 25 quests (" + questCount + "/25)", 
-                        "👑", "in_progress", 500
+                        "👑", "in_progress", 500, questCount, 25
+                    ));
+                } else {
+                    achievements.add(createAchievement(
+                        "quest_master", "Quest Master", "Complete 25 quests (" + questCount + "/25)", 
+                        "👑", "locked", 500, questCount, 25
                     ));
                 }
                 
@@ -285,12 +304,17 @@ public class ProfileService {
                 if (connections >= 10) {
                     achievements.add(createAchievement(
                         "community_builder", "Community Builder", "Connected with 10 users", 
-                        "�️", "completed", 400
+                        "🏗️", "completed", 400, 10, 10
                     ));
                 } else if (connections >= 5) {
                     achievements.add(createAchievement(
                         "community_builder", "Community Builder", "Connect with 10 users (" + connections + "/10)", 
-                        "🏗️", "in_progress", 400
+                        "🏗️", "in_progress", 400, connections, 10
+                    ));
+                } else {
+                    achievements.add(createAchievement(
+                        "community_builder", "Community Builder", "Connect with 10 users (" + connections + "/10)", 
+                        "🏗️", "locked", 400, connections, 10
                     ));
                 }
                 
@@ -299,18 +323,7 @@ public class ProfileService {
             }
             
             // Add locked achievements as goals
-            boolean hasQuestMaster = achievements.stream()
-                .anyMatch(a -> "quest_master".equals(a.get("id")) && "completed".equals(a.get("status")));
-            if (!hasQuestMaster) {
-                boolean hasQuestMasterProgress = achievements.stream()
-                    .anyMatch(a -> "quest_master".equals(a.get("id")));
-                if (!hasQuestMasterProgress) {
-                    achievements.add(createAchievement(
-                        "quest_master", "Quest Master", "Complete 25 quests (0/25)", 
-                        "👑", "locked", 500
-                    ));
-                }
-            }
+            // (Quest master already ensured above with progress stub)
             
             Map<String, Object> result = new HashMap<>();
             result.put("achievements", achievements);
@@ -464,13 +477,26 @@ public class ProfileService {
                                                   String icon, String status, int points) {
         Map<String, Object> achievement = new HashMap<>();
         achievement.put("id", id);
-        achievement.put("title", title);
+    achievement.put("title", title);
+    achievement.put("name", title); // frontend expects name
         achievement.put("description", description);
         achievement.put("icon", icon);
         achievement.put("status", status);
         achievement.put("points", points);
         achievement.put("unlockedAt", "completed".equals(status) ? "2025-08-09T10:00:00" : null);
         return achievement;
+    }
+
+    // Overloaded with progress
+    private Map<String, Object> createAchievement(String id, String title, String description,
+                                                  String icon, String status, int points,
+                                                  int progress, int goal) {
+        Map<String, Object> a = createAchievement(id, title, description, icon, status, points);
+        a.put("progress", progress);
+        a.put("goal", goal);
+        double pct = goal > 0 ? Math.min(100.0, (progress * 100.0) / goal) : ("completed".equals(status) ? 100 : 0);
+        a.put("progressPercent", pct);
+        return a;
     }
     
     private Map<String, Object> createCompletionItem(String field, String name, boolean completed, int weight) {

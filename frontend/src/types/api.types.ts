@@ -139,6 +139,9 @@ export interface ConnectionResponseDTO {
 
 export interface ConnectionDTO {
   id: string
+  fromUserId?: string
+  toUserId?: string
+  direction?: 'in' | 'out'
   type: string
   status: 'PENDING' | 'ACCEPTED' | 'DECLINED'
   createdAt: string

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import axios from 'axios'
+import { unwrap } from '@/utils/api-unwrapper'
 
 export interface User {
   id: string
@@ -80,8 +81,12 @@ export const useUserStore = defineStore('user', () => {
     try {
       console.log('Login attempt with:', credentials.email || credentials.username)
       const response = await axios.post('/api/auth/login', credentials)
-      console.log('Login successful:', response.data.user.username)
-      setAuthData(response.data)
+      const payload: any = unwrap(response.data)
+      if (!payload?.user || !payload?.token) {
+        throw new Error('Malformed login response')
+      }
+      console.log('Login successful:', payload.user.username)
+      setAuthData(payload)
       authInitialized.value = true
       return true
     } catch (err: any) {
@@ -108,8 +113,10 @@ export const useUserStore = defineStore('user', () => {
     error.value = null
     
     try {
-      const response = await axios.post('/api/auth/github', { code })
-      setAuthData(response.data)
+  const response = await axios.post('/api/auth/github', { code })
+  const payload: any = unwrap(response.data)
+  if (!payload?.user || !payload?.token) throw new Error('Malformed GitHub login response')
+  setAuthData(payload)
       return true
     } catch (err: any) {
       error.value = err.response?.data?.message || 'GitHub login failed'
@@ -131,13 +138,16 @@ export const useUserStore = defineStore('user', () => {
     try {
       // Send registration with password
       await axios.post('/api/auth/register', userData)
-      // Immediately login to obtain tokens
-  const loginPayload: { username?: string; email?: string; password: string } = { password: userData.password }
-      // Prefer username if provided
+      // Immediately login to obtain tokens (registration response only returns user)
+      const loginPayload: { username?: string; email?: string; password: string } = { password: userData.password }
       if (userData.username) loginPayload.username = userData.username
       if (userData.email) loginPayload.email = userData.email
       const loginRes = await axios.post('/api/auth/login', loginPayload)
-      setAuthData(loginRes.data)
+      const loginPayloadData: any = unwrap(loginRes.data)
+      if (!loginPayloadData?.user || !loginPayloadData?.token) {
+        throw new Error('Malformed login response after registration')
+      }
+      setAuthData(loginPayloadData)
       return true
     } catch (err: any) {
       error.value = err.response?.data?.message || 'Registration failed'
@@ -189,12 +199,16 @@ export const useUserStore = defineStore('user', () => {
       console.log('🚀 Making /api/auth/me request with token:', storedToken.substring(0, 20) + '...')
       
       const response = await axios.get('/api/auth/me')
-      
-      // Set both user and token from the response
-      user.value = response.data
+      const payload: any = unwrap(response.data)
+      // Backend /me returns {user: {...}}
+      const userData = payload?.user || payload
+      if (!userData?.username) {
+        throw new Error('Malformed /me response')
+      }
+      user.value = userData
       token.value = storedToken  // Make sure token is set
       
-      console.log('✅ Auth check successful, user:', response.data.username, 'token set:', !!token.value)
+      console.log('✅ Auth check successful, user:', userData.username, 'token set:', !!token.value)
       
     } catch (err: any) {
       console.warn('⚠️ Auth check failed - Status:', err.response?.status, 'Message:', err.response?.data?.message || err.message)
@@ -222,8 +236,11 @@ export const useUserStore = defineStore('user', () => {
     error.value = null
     
     try {
-      const response = await axios.put(`/api/users/${user.value.id}`, profileData)
-      user.value = { ...user.value, ...response.data }
+  const response = await axios.put(`/api/users/${user.value.id}`, profileData)
+  const payload: any = unwrap(response.data)
+  const updatedUser = payload?.user || payload
+  if (!updatedUser) throw new Error('Malformed profile update response')
+  user.value = { ...user.value, ...updatedUser }
       return true
     } catch (err: any) {
       error.value = err.response?.data?.message || 'Profile update failed'
@@ -237,8 +254,10 @@ export const useUserStore = defineStore('user', () => {
     if (!user.value) return false
     
     try {
-      const response = await axios.post(`/api/users/${user.value.id}/role`, { role })
-      user.value = { ...user.value, selectedRole: role }
+  const response = await axios.post(`/api/users/${user.value.id}/role`, { role })
+  const payload: any = unwrap(response.data)
+  const updatedUser = payload?.user || user.value
+  user.value = { ...user.value, ...updatedUser, selectedRole: role }
       return true
     } catch (err: any) {
       error.value = err.response?.data?.message || 'Role selection failed'
