@@ -35,7 +35,12 @@ export const testQuestService = {
     
     try {
       const response = await questService.getUserQuests()
-      console.log('✅ getAvailableQuests successful:', response)
+      if (response.success) {
+        const count = response.data?.data?.length || 0
+        console.log(`✅ getAvailableQuests successful: ${count} entries (page ${response.data?.pagination?.page})`)
+      } else {
+        console.warn('⚠️ getAvailableQuests returned unsuccessful response', response)
+      }
       return response
     } catch (error) {
       console.error('❌ getAvailableQuests failed:', error)
@@ -80,10 +85,13 @@ export const testQuestService = {
    */
   async testGetQuestStats() {
     console.log('🧪 Testing getQuestStats...')
-    
     try {
-      const response = await questService.getQuests()
-      console.log('✅ getQuestStats successful:', response)
+      const response = await questService.getUserQuestStatistics()
+      if (response.success) {
+        console.log('✅ getQuestStats successful:', response.data)
+      } else {
+        console.warn('⚠️ getQuestStats unsuccessful:', response)
+      }
       return response
     } catch (error) {
       console.error('❌ getQuestStats failed:', error)
@@ -117,15 +125,19 @@ export const testQuestService = {
     await this.testGetQuestStats()
 
     // 4. Simuliere Quest akzeptieren (falls verfügbare Quests vorhanden)
-    if (availableQuests.data && availableQuests.data.length > 0) {
-      const firstQuest = availableQuests.data[0]
-      console.log('🎯 Found available quest for testing:', firstQuest.questId)
+    if (availableQuests.data && Array.isArray(availableQuests.data.data) && availableQuests.data.data.length > 0) {
+      const firstQuest = availableQuests.data.data[0]
+      console.log('🎯 Found available quest for testing:', firstQuest.questId || firstQuest.quest?.id)
       
       // Akzeptiere Quest
-      const acceptResult = await this.testAcceptQuest(firstQuest.questId, userId)
-      
-      if (acceptResult?.success) {
-        console.log('🎉 Quest acceptance successful! You can now test completion in the UI.')
+      const questId = (firstQuest.questId || firstQuest.quest?.id)
+      if (!questId) {
+        console.warn('⚠️ Could not determine questId for first quest, skipping accept test')
+      } else {
+        const acceptResult = await this.testAcceptQuest(questId, userId)
+        if (acceptResult?.success) {
+          console.log('🎉 Quest acceptance successful! You can now test completion in the UI.')
+        }
       }
     } else {
       console.log('📝 No available quests found for testing')

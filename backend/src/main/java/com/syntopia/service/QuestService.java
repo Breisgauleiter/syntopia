@@ -280,6 +280,29 @@ public class QuestService {
     }
 
     /**
+     * Verify a completed quest (transition USER_COMPLETED -> USER_VERIFIED)
+     */
+    public UserQuest verifyCompletedUserQuest(String userId, String questId) {
+    UserQuest userQuest = userQuestRepository.findByUserIdAndQuestId(userId, questId)
+        .orElseThrow(() -> new IllegalArgumentException("User quest relationship not found"));
+
+        if (userQuest.getStatus() != UserQuest.UserQuestStatus.USER_COMPLETED) {
+            throw new IllegalArgumentException("Quest must be in USER_COMPLETED status to verify");
+        }
+
+        userQuest.setStatus(UserQuest.UserQuestStatus.USER_VERIFIED);
+        userQuest.setVerified(true);
+        userQuest.setLastProgressUpdate(java.time.LocalDateTime.now());
+
+        UserQuest saved = userQuestRepository.save(userQuest);
+        // Load quest data for frontend
+        Quest quest = questRepository.findById(questId)
+                .orElseThrow(() -> new IllegalArgumentException("Quest not found: " + questId));
+        saved.setQuest(quest);
+        return saved;
+    }
+
+    /**
      * Update quest progress for a user
      */
     public UserQuest updateQuestProgress(String userId, String questId, Map<String, Object> progressUpdate) {
@@ -430,89 +453,9 @@ public class QuestService {
     // Quest Progression & Completion
     // ===============================
 
-    /**
-     * Start/Accept a quest for a user
-     */
-    public User acceptQuest(String userId, String questId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
-        
-        Quest quest = questRepository.findById(questId)
-                .orElseThrow(() -> new IllegalArgumentException("Quest not found: " + questId));
+    // Legacy direct quest accept method removed in favor of edge-based acceptUserQuest
 
-        // Validate user can accept this quest
-        if (user.getCurrentLevel() < quest.getRequiredLevel()) {
-            throw new IllegalArgumentException("User level " + user.getCurrentLevel() + 
-                    " is too low for quest requiring level " + quest.getRequiredLevel());
-        }
-
-        // Role validation - allow if quest has no role requirement OR matches user role OR quest is for "All"
-        if (quest.getRole() != null && 
-            !quest.getRole().equals("All") && 
-            !quest.getRole().equals(user.getSelectedRole())) {
-            throw new IllegalArgumentException("Quest is not available for role: " + user.getSelectedRole());
-        }
-
-        if (quest.getStatus() != Quest.QuestStatus.AVAILABLE) {
-            throw new IllegalArgumentException("Quest is not available for acceptance");
-        }
-
-        // TODO: Create UserQuest edge relationship in ArangoDB
-        // For now, we'll track this in a simple way
-        // In future: use ArangoDB edge collection "user_quests"
-        
-        quest.setStatus(Quest.QuestStatus.ACTIVE);
-        quest.setUpdatedAt(LocalDateTime.now());
-        questRepository.save(quest);
-
-        return user;
-    }
-
-    /**
-     * Complete a quest for a user
-     */
-    public User completeQuest(String userId, String questId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
-        
-        Quest quest = questRepository.findById(questId)
-                .orElseThrow(() -> new IllegalArgumentException("Quest not found: " + questId));
-
-        if (quest.getStatus() != Quest.QuestStatus.ACTIVE) {
-            throw new IllegalArgumentException("Quest is not active and cannot be completed");
-        }
-
-        // Mark quest as completed
-        quest.setStatus(Quest.QuestStatus.COMPLETED);
-        quest.setUpdatedAt(LocalDateTime.now());
-        questRepository.save(quest);
-
-        // Award experience points to user
-        return userService.completeQuest(userId, quest.getExperienceReward());
-    }
-
-    /**
-     * Abandon/Cancel a quest for a user
-     */
-    public User abandonQuest(String userId, String questId) {
-        // Verify user exists and get user for return
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
-        
-        Quest quest = questRepository.findById(questId)
-                .orElseThrow(() -> new IllegalArgumentException("Quest not found: " + questId));
-
-        if (quest.getStatus() != Quest.QuestStatus.ACTIVE) {
-            throw new IllegalArgumentException("Quest is not active and cannot be abandoned");
-        }
-
-        // Reset quest to available status
-        quest.setStatus(Quest.QuestStatus.AVAILABLE);
-        quest.setUpdatedAt(LocalDateTime.now());
-        questRepository.save(quest);
-
-        return user;
-    }
+    // Legacy direct quest completion/abandon methods removed (edge-based operations now used)
 
     // ===============================
     // Quest Analytics & Statistics

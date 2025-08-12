@@ -347,12 +347,10 @@ const loadUserQuests = async () => {
   try {
     const response = await questService.getUserActiveQuests()
     if (response.success && response.data) {
-      userQuests.value = response.data
-      
+      const list = Array.isArray((response.data as any).data) ? (response.data as any).data : response.data
+      userQuests.value = list
       // Calculate stats
-      completedQuestsCount.value = response.data.filter(uq => uq.status === UserQuestStatus.USER_COMPLETED).length
-      
-      // Calculate quest streak (simplified - in real app would be based on completion dates)
+      completedQuestsCount.value = list.filter((uq: any) => uq.status === UserQuestStatus.USER_COMPLETED).length
       questStreak.value = Math.min(completedQuestsCount.value, 7)
     }
   } catch (error) {

@@ -1,4 +1,7 @@
 import apiService from './api'
+// NOTE: Components should prefer using unwrap/extractList from '@/utils/api-unwrapper'
+// rather than manually reaching into .data shapes. This service returns raw ApiResponse
+// envelopes so that higher layers can consolidate handling.
 import type { ApiResponse } from '@/types/api.types'
 
 // Quest Types
@@ -33,7 +36,7 @@ export interface Quest {
 
 // UserQuest Interface for individual user progress
 export interface UserQuest {
-  id: string
+  userQuestId: string // renamed from id in DTO
   userId: string
   questId: string
   status: UserQuestStatus
@@ -49,9 +52,21 @@ export interface UserQuest {
   completionData?: Record<string, any>
   githubPullRequestUrl?: string
   githubCommitSha?: string
-  isVerified?: boolean
+  verified?: boolean
   // Include quest data for convenience
   quest?: Quest
+}
+
+export interface Paginated<T> {
+  data: T[]
+  pagination: {
+    page: number
+    size: number
+    total: number
+    hasNext?: boolean
+    hasPrev?: boolean
+    totalPages?: number
+  }
 }
 
 export enum QuestCategory {
@@ -128,11 +143,11 @@ class QuestService {
   // ===============================
 
   /**
-   * Get available quests for user with their individual progress
+   * Get available quests for user with their individual progress (paginated)
    */
-  async getUserQuests(): Promise<ApiResponse<UserQuest[]>> {
+  async getUserQuests(page = 0, size = 50): Promise<ApiResponse<Paginated<UserQuest>>> {
     try {
-      return await apiService.get<UserQuest[]>('/user-quests/available')
+      return await apiService.get<Paginated<UserQuest>>(`/user-quests/available?page=${page}&size=${size}`)
     } catch (error) {
       console.error('❌ Error fetching user quests:', error)
       return {
@@ -143,95 +158,63 @@ class QuestService {
   }
 
   /**
-   * Get active quests for the current user
+   * Get active quests for the current user (paginated)
    */
-  async getUserActiveQuests(): Promise<ApiResponse<UserQuest[]>> {
+  async getUserActiveQuests(page = 0, size = 50): Promise<ApiResponse<Paginated<UserQuest>>> {
     try {
-      // Preferred endpoint if backend supports it
-      return await apiService.get<UserQuest[]>('/user-quests/active')
+      return await apiService.get<Paginated<UserQuest>>(`/user-quests/active?page=${page}&size=${size}`)
     } catch (error) {
-      console.warn('⚠️ /user-quests/active not available, falling back to /user-quests/available and filtering locally:', error)
-      try {
-        const res = await apiService.get<UserQuest[]>('/user-quests/available')
-        if (res.success && res.data) {
-          // Filter to only ACTIVE items if status is included
-          const onlyActive = res.data.filter(uq => uq.status === UserQuestStatus.USER_ACTIVE)
-          return { success: true, data: onlyActive }
-        }
-        return res
-      } catch (e) {
-        return { success: false, error: { message: 'Failed to fetch active user quests' } }
-      }
+      console.warn('⚠️ /user-quests/active failed:', error)
+      return { success: false, error: { message: 'Failed to fetch active user quests' } }
     }
   }
 
-  /**
-   * Accept/Start a quest for the current user
-   */
-  async acceptQuest(questId: string): Promise<ApiResponse<{userQuest: UserQuest, message: string}>> {
+  /** Accept/Start a quest */
+  async acceptQuest(questId: string): Promise<ApiResponse<UserQuest>> {
     try {
-      return await apiService.post<{userQuest: UserQuest, message: string}>(`/user-quests/${questId}/accept`)
+      return await apiService.post<UserQuest>(`/user-quests/${questId}/accept`)
     } catch (error) {
       console.error('❌ Error accepting quest:', error)
-      return {
-        success: false,
-        error: { message: 'Failed to accept quest' }
-      }
+      return { success: false, error: { message: 'Failed to accept quest' } }
     }
   }
 
-  /**
-   * Complete a quest for the current user
-   */
-  async completeQuest(questId: string, completionData?: Record<string, any>): Promise<ApiResponse<{userQuest: UserQuest, experienceAwarded: number, message: string}>> {
+  /** Complete a quest */
+  async completeQuest(questId: string, completionData?: Record<string, any>): Promise<ApiResponse<{ experienceAwarded?: number } & UserQuest>> {
     try {
-      return await apiService.post<{userQuest: UserQuest, experienceAwarded: number, message: string}>(`/user-quests/${questId}/complete`, completionData || {})
+      return await apiService.post<{ experienceAwarded?: number } & UserQuest>(`/user-quests/${questId}/complete`, completionData || {})
     } catch (error) {
       console.error('❌ Error completing quest:', error)
-      return {
-        success: false,
-        error: { message: 'Failed to complete quest' }
-      }
+      return { success: false, error: { message: 'Failed to complete quest' } }
     }
   }
 
-  /**
-   * Abandon a quest for the current user  
-   */
-  async abandonQuest(questId: string): Promise<ApiResponse<{userQuest: UserQuest, message: string}>> {
+  /** Abandon a quest */
+  async abandonQuest(questId: string): Promise<ApiResponse<UserQuest>> {
     try {
-      return await apiService.post<{userQuest: UserQuest, message: string}>(`/user-quests/${questId}/abandon`)
+      return await apiService.post<UserQuest>(`/user-quests/${questId}/abandon`)
     } catch (error) {
       console.error('❌ Error abandoning quest:', error)
-      return {
-        success: false,
-        error: { message: 'Failed to abandon quest' }
-      }
+      return { success: false, error: { message: 'Failed to abandon quest' } }
     }
   }
 
-  /**
-   * Get user's quest statistics
-   */
-  async getUserQuestStatistics(): Promise<ApiResponse<{
-    totalCompleted: number
-    activeQuests: number  
-    completedThisWeek: number
-    recentCompletions: UserQuest[]
-  }>> {
+  /** Verify a completed quest */
+  async verifyQuest(questId: string): Promise<ApiResponse<UserQuest>> {
     try {
-      return await apiService.get<{
-        totalCompleted: number
-        activeQuests: number
-        completedThisWeek: number  
-        recentCompletions: UserQuest[]
-      }>('/user-quests/statistics')
+      return await apiService.post<UserQuest>(`/user-quests/${questId}/verify`)
     } catch (error) {
-      console.error('❌ Error fetching quest statistics:', error)
-      return {
-        success: false,
-        error: { message: 'Failed to fetch quest statistics' }
-      }
+      console.error('❌ Error verifying quest:', error)
+      return { success: false, error: { message: 'Failed to verify quest' } }
+    }
+  }
+
+  /** Stats */
+  async getUserQuestStatistics(): Promise<ApiResponse<{ totalCompleted: number; activeQuests: number; completedThisWeek: number; recentCompletions: UserQuest[] }>> {
+    try {
+      return await apiService.get<{ totalCompleted: number; activeQuests: number; completedThisWeek: number; recentCompletions: UserQuest[] }>(`/user-quests/statistics`)
+    } catch (error) {
+      return { success: false, error: { message: 'Failed to fetch quest statistics' } }
     }
   }
 
@@ -373,7 +356,7 @@ class QuestService {
    */
   questToUserQuest(quest: Quest, status: UserQuestStatus = UserQuestStatus.USER_AVAILABLE): UserQuest {
     return {
-      id: `userquest-${quest.id}`,
+      userQuestId: `userquest-${quest.id}`,
       userId: '', // Will be filled by user store
       questId: quest.id,
       status,

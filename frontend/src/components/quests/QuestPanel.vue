@@ -104,7 +104,7 @@
       <!-- Active Quests Tab -->
       <div v-if="activeTab === 'active'" class="tab-content">
         <div class="quest-list">
-          <template v-for="userQuest in activeQuests" :key="userQuest.id">
+          <template v-for="userQuest in activeQuests" :key="userQuest.userQuestId || userQuest.questId">
             <div 
               v-if="userQuest.quest"
               class="quest-item active-quest"
@@ -114,8 +114,8 @@
               <div class="quest-info">
                 <div class="quest-title">{{ userQuest.quest.title }}</div>
                 <div class="quest-progress-bar">
-                  <div class="progress-fill" :style="{ width: (userQuest.progress * 100) + '%' }"></div>
-                  <span class="progress-text">{{ Math.floor(userQuest.progress * 100) }}%</span>
+                  <div class="progress-fill" :style="{ width: getProgressPercent(userQuest) + '%' }"></div>
+                  <span class="progress-text">{{ Math.floor(getProgressPercent(userQuest)) }}%</span>
                 </div>
                 <div class="quest-objectives">
                   <div v-for="objective in getQuestObjectives(userQuest)" :key="objective.id" class="objective">
@@ -167,7 +167,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useUserStore } from '@/stores/user'
-import questService, { UserQuestStatus, QuestType, type Quest, type UserQuest } from '@/services/quest.service'
+import questService, { UserQuestStatus, QuestType, type Quest, type UserQuest, type Paginated } from '@/services/quest.service'
 import OnboardingService, { type OnboardingQuest } from '@/services/onboarding.service'
 import { useRouter } from 'vue-router'
 
@@ -186,6 +186,7 @@ const dragOffset = ref({ x: 0, y: 0 })
 
 // Quest data
 const availableQuests = ref<Quest[]>([])
+// Store only the array of UserQuest entries (unwrap from paginated response)
 const userQuests = ref<UserQuest[]>([])
 const isLoading = ref(false)
 // Onboarding integration
@@ -206,9 +207,7 @@ const filteredAvailableQuests = computed(() => {
   return availableQuests.value.filter(quest => quest.type === selectedFilter.value)
 })
 
-const activeQuests = computed(() => {
-  return userQuests.value.filter(uq => uq.status === UserQuestStatus.USER_ACTIVE)
-})
+const activeQuests = computed(() => userQuests.value.filter(uq => uq.status === UserQuestStatus.USER_ACTIVE))
 
 // Quest utility functions
 const getQuestIcon = (type: QuestType): string => {
@@ -263,9 +262,7 @@ const getQuestObjectives = (userQuest: UserQuest) => {
   }
 }
 
-const isQuestAccepted = (questId: string) => {
-  return userQuests.value.some(uq => uq.quest?.id === questId)
-}
+const isQuestAccepted = (questId: string) => userQuests.value.some(uq => uq.questId === questId || uq.quest?.id === questId)
 
 // Quest actions
 const selectQuest = (quest: Quest) => {
@@ -395,15 +392,28 @@ const loadAvailableQuests = async () => {
 
 const loadUserQuests = async () => {
   if (!userStore.user?.id) return
-  
+
   try {
     const response = await questService.getUserQuests()
     if (response.success && response.data) {
-      userQuests.value = response.data
+      // unwrap paginated structure -> data array
+      const paginated = response.data as Paginated<UserQuest>
+      userQuests.value = Array.isArray(paginated.data) ? paginated.data : []
+      // Normalize progress if backend returns 0-100 (convert to 0-1 used in UI)
+      userQuests.value = userQuests.value.map(uq => ({
+        ...uq,
+        progress: uq.progress > 1 ? uq.progress / 100 : (uq.progress || 0)
+      }))
     }
   } catch (error) {
     console.error('Failed to load user quests:', error)
   }
+}
+
+// Helper to compute progress percent (handles 0-1 or 0-100 inputs gracefully)
+const getProgressPercent = (userQuest: UserQuest) => {
+  const p = userQuest.progress || 0
+  return p <= 1 ? p * 100 : p
 }
 
 const loadNextOnboardingQuest = async () => {

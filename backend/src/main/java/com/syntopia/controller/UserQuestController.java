@@ -1,5 +1,7 @@
 package com.syntopia.controller;
 
+import com.syntopia.dto.ApiResponse;
+import com.syntopia.dto.UserQuestDTO;
 import com.syntopia.model.UserQuest;
 import com.syntopia.service.QuestService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,173 +30,122 @@ public class UserQuestController {
      * Get all available quests for the authenticated user with their progress
      */
     @GetMapping("/available")
-    public ResponseEntity<List<UserQuest>> getAvailableQuestsForUser(Authentication authentication) {
-        try {
-            String userId = authentication.getName(); // Get user ID from JWT
-            List<UserQuest> userQuests = questService.getAvailableQuestsForUserWithProgress(userId);
-            return ResponseEntity.ok(userQuests);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
+    public ResponseEntity<?> getAvailableQuestsForUser(Authentication authentication,
+                                                       @RequestParam(defaultValue = "0") int page,
+                                                       @RequestParam(defaultValue = "50") int size) {
+    String userId = authentication.getName();
+    List<UserQuest> all = questService.getAvailableQuestsForUserWithProgress(userId);
+    int from = Math.min(page * size, all.size());
+    int to = Math.min(from + size, all.size());
+    List<UserQuestDTO> slice = all.subList(from, to).stream()
+        .map(uq -> UserQuestDTO.fromEntity(uq, userId))
+        .toList();
+    return ResponseEntity.ok(ApiResponse.paginated(slice, page, size, all.size()));
     }
 
     /**
      * Accept/Start a quest for the authenticated user
      */
     @PostMapping("/{questId}/accept")
-    public ResponseEntity<Map<String, Object>> acceptQuest(@PathVariable String questId, Authentication authentication) {
-        try {
-            String userId = authentication.getName();
-            UserQuest userQuest = questService.acceptUserQuest(userId, questId);
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "Quest accepted successfully");
-            response.put("userQuest", userQuest);
-            
-            return ResponseEntity.ok(response);
-        } catch (IllegalArgumentException e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", "Failed to accept quest");
-            return ResponseEntity.internalServerError().body(errorResponse);
-        }
+    public ResponseEntity<?> acceptQuest(@PathVariable String questId, Authentication authentication) {
+    String userId = authentication.getName();
+    UserQuest userQuest = questService.acceptUserQuest(userId, questId); // may throw IllegalArgumentException
+    UserQuestDTO dto = UserQuestDTO.fromEntity(userQuest, userId);
+    return ResponseEntity.ok(ApiResponse.success("Quest accepted successfully", dto));
     }
 
     /**
      * Complete a quest for the authenticated user
      */
     @PostMapping("/{questId}/complete")
-    public ResponseEntity<Map<String, Object>> completeQuest(
+    public ResponseEntity<?> completeQuest(
             @PathVariable String questId, 
             @RequestBody(required = false) Map<String, Object> completionData,
             Authentication authentication) {
-        try {
-            String userId = authentication.getName();
-            
-            if (completionData == null) {
-                completionData = new HashMap<>();
-            }
-            
-            UserQuest userQuest = questService.completeUserQuest(userId, questId, completionData);
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "Quest completed successfully");
-            response.put("userQuest", userQuest);
-            response.put("experienceAwarded", userQuest.getExperienceAwarded());
-            
-            return ResponseEntity.ok(response);
-        } catch (IllegalArgumentException e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", "Failed to complete quest");
-            return ResponseEntity.internalServerError().body(errorResponse);
+        String userId = authentication.getName();
+        if (completionData == null) {
+            completionData = new HashMap<>();
         }
+        UserQuest userQuest = questService.completeUserQuest(userId, questId, completionData); // may throw IllegalArgumentException
+        UserQuestDTO dto = UserQuestDTO.fromEntity(userQuest, userId);
+        Map<String,Object> payload = new HashMap<>(dto.toMap());
+        payload.put("experienceAwarded", userQuest.getExperienceAwarded());
+        return ResponseEntity.ok(ApiResponse.success("Quest completed successfully", payload));
     }
 
     /**
      * Abandon a quest for the authenticated user
      */
     @PostMapping("/{questId}/abandon")
-    public ResponseEntity<Map<String, Object>> abandonQuest(@PathVariable String questId, Authentication authentication) {
-        try {
-            String userId = authentication.getName();
-            UserQuest userQuest = questService.abandonUserQuest(userId, questId);
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "Quest abandoned successfully");
-            response.put("userQuest", userQuest);
-            
-            return ResponseEntity.ok(response);
-        } catch (IllegalArgumentException e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", "Failed to abandon quest");
-            return ResponseEntity.internalServerError().body(errorResponse);
-        }
+    public ResponseEntity<?> abandonQuest(@PathVariable String questId, Authentication authentication) {
+    String userId = authentication.getName();
+    UserQuest userQuest = questService.abandonUserQuest(userId, questId);
+    UserQuestDTO dto = UserQuestDTO.fromEntity(userQuest, userId);
+    return ResponseEntity.ok(ApiResponse.success("Quest abandoned successfully", dto));
     }
 
     /**
      * Get user's quest statistics and progress
      */
     @GetMapping("/statistics")
-    public ResponseEntity<Map<String, Object>> getUserQuestStatistics(Authentication authentication) {
-        try {
-            String userId = authentication.getName();
-            Map<String, Object> statistics = questService.getUserQuestStatistics(userId);
-            return ResponseEntity.ok(statistics);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
+    public ResponseEntity<?> getUserQuestStatistics(Authentication authentication) {
+    String userId = authentication.getName();
+    Map<String, Object> statistics = questService.getUserQuestStatistics(userId);
+    return ResponseEntity.ok(ApiResponse.success(statistics));
     }
 
     /**
      * Update quest progress for the authenticated user
      */
     @PutMapping("/{questId}/progress")
-    public ResponseEntity<Map<String, Object>> updateQuestProgress(
+    public ResponseEntity<?> updateQuestProgress(
             @PathVariable String questId,
             @RequestBody Map<String, Object> progressUpdate,
             Authentication authentication) {
-        try {
-            String userId = authentication.getName();
-            UserQuest updatedUserQuest = questService.updateQuestProgress(userId, questId, progressUpdate);
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("userQuest", updatedUserQuest);
-            response.put("message", "Progress updated successfully");
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("success", false);
-            errorResponse.put("message", "Failed to update progress: " + e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
-        }
+    String userId = authentication.getName();
+    UserQuest updatedUserQuest = questService.updateQuestProgress(userId, questId, progressUpdate);
+    UserQuestDTO dto = UserQuestDTO.fromEntity(updatedUserQuest, userId);
+    return ResponseEntity.ok(ApiResponse.success("Progress updated successfully", dto));
     }
 
     /**
      * Get user's active quests
      */
     @GetMapping("/active")
-    public ResponseEntity<List<UserQuest>> getActiveQuests(Authentication authentication) {
-        try {
-            String userId = authentication.getName();
-            List<UserQuest> activeQuests = questService.getActiveQuestsForUser(userId);
-            return ResponseEntity.ok(activeQuests);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
+    public ResponseEntity<?> getActiveQuests(Authentication authentication,
+                                             @RequestParam(defaultValue = "0") int page,
+                                             @RequestParam(defaultValue = "50") int size) {
+    String userId = authentication.getName();
+    List<UserQuest> all = questService.getActiveQuestsForUser(userId);
+    int from = Math.min(page * size, all.size());
+    int to = Math.min(from + size, all.size());
+    List<UserQuestDTO> slice = all.subList(from, to).stream().map(uq -> UserQuestDTO.fromEntity(uq, userId)).toList();
+    return ResponseEntity.ok(ApiResponse.paginated(slice, page, size, all.size()));
     }
 
         /**
      * Get user's completed quests
      */
     @GetMapping("/completed")
-    public ResponseEntity<List<UserQuest>> getCompletedQuests(Authentication authentication) {
-        try {
-            String userId = authentication.getName();
-            List<UserQuest> completedQuests = questService.getCompletedQuestsForUser(userId);
-            return ResponseEntity.ok(completedQuests);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
+    public ResponseEntity<?> getCompletedQuests(Authentication authentication,
+                                                @RequestParam(defaultValue = "0") int page,
+                                                @RequestParam(defaultValue = "50") int size) {
+    String userId = authentication.getName();
+    List<UserQuest> all = questService.getCompletedQuestsForUser(userId);
+    int from = Math.min(page * size, all.size());
+    int to = Math.min(from + size, all.size());
+    List<UserQuestDTO> slice = all.subList(from, to).stream().map(uq -> UserQuestDTO.fromEntity(uq, userId)).toList();
+    return ResponseEntity.ok(ApiResponse.paginated(slice, page, size, all.size()));
+    }
+
+    /**
+     * Verify a completed quest (transition USER_COMPLETED -> USER_VERIFIED)
+     */
+    @PostMapping("/{questId}/verify")
+    public ResponseEntity<?> verifyQuest(@PathVariable String questId, Authentication authentication) {
+    String userId = authentication.getName();
+    UserQuest verified = questService.verifyCompletedUserQuest(userId, questId);
+    UserQuestDTO dto = UserQuestDTO.fromEntity(verified, userId);
+    return ResponseEntity.ok(ApiResponse.success("Quest verified", dto));
     }
 }

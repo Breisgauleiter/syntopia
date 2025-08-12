@@ -7,6 +7,7 @@ import questService, {
   QuestType, 
   QuestDifficulty, 
   QuestStatus, 
+  UserQuestStatus,
   type QuestFilter 
 } from '@/services/quest.service'
 import onboardingService, { type OnboardingQuest } from '@/services/onboarding.service'
@@ -39,6 +40,14 @@ const filters = ref<QuestFilter>({
 const sortBy = ref<'title' | 'difficulty' | 'experience' | 'level'>('title')
 const sortDirection = ref<'asc' | 'desc'>('asc')
 
+// Pagination state
+const availablePagination = ref({ page: 0, size: 50, total: 0 })
+
+// Total pages computed from pagination
+const totalAvailablePages = computed(() => {
+  return availablePagination.value.size > 0 ? Math.max(1, Math.ceil(availablePagination.value.total / availablePagination.value.size)) : 1
+})
+
 // Role options for filter (derived from quests + user's role)
 const roleOptions = computed<string[]>(() => {
   const roles = new Set<string>()
@@ -68,7 +77,6 @@ const questStats = ref({
 const loadQuests = async () => {
   loading.value = true
   error.value = null
-  
   try {
     // Load all quests
     const allQuestsResponse = await questService.getQuests()
@@ -79,9 +87,34 @@ const loadQuests = async () => {
 
     // Load available quests for current user
     if (userStore.user?.id) {
-      const availableResponse = await questService.getUserQuests()
+      const availableResponse = await questService.getUserQuests(availablePagination.value.page, availablePagination.value.size)
       if (availableResponse.success && availableResponse.data) {
-        availableQuests.value = availableResponse.data
+        availableQuests.value = availableResponse.data.data
+        availablePagination.value.total = availableResponse.data.pagination.total
+        // Map user-specific status onto the quest objects so UI buttons reflect personal progress
+        for (const uq of availableQuests.value) {
+          if (uq.quest) {
+            switch (uq.status) {
+              case UserQuestStatus.USER_ACTIVE:
+                uq.quest.status = QuestStatus.ACTIVE
+                break
+              case UserQuestStatus.USER_COMPLETED:
+              case UserQuestStatus.USER_VERIFIED:
+                uq.quest.status = QuestStatus.COMPLETED
+                break
+              case UserQuestStatus.USER_ABANDONED:
+                // Abandoned returns to AVAILABLE for user; keep AVAILABLE globally
+                uq.quest.status = QuestStatus.AVAILABLE
+                break
+              default:
+                uq.quest.status = QuestStatus.AVAILABLE
+            }
+            // If quest not already in global quests list, optionally push (helps when /quests missing it)
+            if (!quests.value.find(q => q.id === uq.quest!.id)) {
+              quests.value.push(uq.quest)
+            }
+          }
+        }
       }
     }
 
@@ -171,49 +204,7 @@ const continueOnboarding = async () => {
   }
 }
 
-/**
- * Accept a quest
- */
-const acceptQuest = async (quest: Quest) => {
-  if (!userStore.user?.id) {
-    error.value = 'You must be logged in to accept quests'
-    return
-  }
-
-  loading.value = true
-  
-  try {
-    const response = await questService.acceptQuest(quest.id)
-    
-    if (response.success) {
-      // Update quest status
-      const questIndex = quests.value.findIndex(q => q.id === quest.id)
-      if (questIndex !== -1) {
-        quests.value[questIndex].status = QuestStatus.ACTIVE
-      }
-
-      // Update user data if returned
-      if (response.data?.userQuest) {
-        // Add the userQuest to our availableQuests
-        availableQuests.value.push(response.data.userQuest)
-      }
-
-      // Show success message
-      console.log('✅ Quest accepted successfully:', response.data?.message)
-      
-      // Reload quests to get updated data
-      await loadQuests()
-      
-    } else {
-      error.value = response.error?.message || 'Failed to accept quest'
-    }
-  } catch (err) {
-    console.error('Error accepting quest:', err)
-    error.value = 'Failed to accept quest. Please try again.'
-  } finally {
-    loading.value = false
-  }
-}
+// Original acceptQuest removed; unified implementation defined later after pagination logic
 
 /**
  * Complete a quest
@@ -227,48 +218,18 @@ const completeQuest = async (quest: Quest) => {
   loading.value = true
   
   try {
-    const response = await questService.completeQuest(quest.id)
-    
-    if (response.success) {
-      // Update quest status
-      const questIndex = quests.value.findIndex(q => q.id === quest.id)
-      if (questIndex !== -1) {
-        quests.value[questIndex].status = QuestStatus.COMPLETED
-      }
-
-      // Update user data and show experience animation
-      if (response.data?.userQuest && response.data?.experienceAwarded) {
-        // Update the userQuest in our availableQuests
-        const questIndex = availableQuests.value.findIndex(uq => uq.questId === quest.id)
-        if (questIndex !== -1) {
-          availableQuests.value[questIndex] = response.data.userQuest
-        }
-        
-        // Show experience gained animation
-        experienceGained.value = response.data.experienceAwarded
+    const res = await questService.completeQuest(quest.id)
+    if (res.success && res.data) {
+      quest.status = QuestStatus.COMPLETED
+      if (res.data.experienceAwarded) {
+        experienceGained.value = res.data.experienceAwarded
         showExperienceAnimation.value = true
-        
-        // Hide animation after 3 seconds
-        setTimeout(() => {
-          showExperienceAnimation.value = false
-        }, 3000)
+        setTimeout(() => showExperienceAnimation.value = false, 3000)
       }
-
-      // Show success message
-      console.log('🎉 Quest completed successfully:', response.data?.message)
-      
-      // Reload quests to get updated data
-      await loadQuests()
-      
-      // Close quest modal if open
-      showQuestModal.value = false
-      
-    } else {
-      error.value = response.error?.message || 'Failed to complete quest'
-    }
-  } catch (err) {
-    console.error('Error completing quest:', err)
-    error.value = 'Failed to complete quest. Please try again.'
+      loadQuests()
+    } else error.value = res.error?.message || 'Failed to complete quest'
+  } catch {
+    error.value = 'Failed to complete quest'
   } finally {
     loading.value = false
   }
@@ -290,95 +251,52 @@ const abandonQuest = async (quest: Quest) => {
   loading.value = true
   
   try {
-    const response = await questService.abandonQuest(quest.id)
-    
-    if (response.success) {
-      // Update quest status
-      const questIndex = quests.value.findIndex(q => q.id === quest.id)
-      if (questIndex !== -1) {
-        quests.value[questIndex].status = QuestStatus.AVAILABLE
-      }
-
-      console.log('Quest abandoned successfully')
-      await loadQuests()
-      
-    } else {
-      error.value = response.error?.message || 'Failed to abandon quest'
-    }
-  } catch (err) {
-    console.error('Error abandoning quest:', err)
-    error.value = 'Failed to abandon quest. Please try again.'
+    const res = await questService.abandonQuest(quest.id)
+    if (res.success && res.data) {
+      quest.status = QuestStatus.AVAILABLE
+      loadQuests()
+    } else error.value = res.error?.message || 'Failed to abandon quest'
+  } catch {
+    error.value = 'Failed to abandon quest'
   } finally {
     loading.value = false
   }
 }
 
 /**
- * Filter and sort quests
+ * Verify a quest (for completed user quests awaiting verification)
  */
-const filteredQuests = computed(() => {
-  let questsToFilter: Quest[] = []
-  
-  // Ensure quests.value is an array before filtering
-  const questsArray = Array.isArray(quests.value) ? quests.value : []
-  
-  switch (activeTab.value) {
-    case 'available':
-      // Convert UserQuests to Quest type by accessing the questId - for now just use quests array
-      questsToFilter = questsArray.filter(q => q.status === QuestStatus.AVAILABLE)
-      break
-    case 'completed':
-      questsToFilter = Array.isArray(completedQuests.value) ? completedQuests.value : []
-      break
-    case 'github':
-      questsToFilter = questsArray.filter(q => q.type === QuestType.GITHUB_ISSUE)
-      break
-    default:
-      questsToFilter = questsArray.filter(q => q.status === QuestStatus.AVAILABLE)
+const verifyQuest = async (quest: Quest) => {
+  try {
+    const res = await questService.verifyQuest(quest.id)
+    if (res.success && res.data) {
+      quest.status = QuestStatus.COMPLETED // stays completed; badge can show verified via userQuest status
+      loadQuests()
+    } else error.value = res.error?.message || 'Failed to verify quest'
+  } catch {
+    error.value = 'Failed to verify quest'
   }
+}
 
-  // Apply filters
-  let filtered = questsToFilter.filter(quest => {
-    if (filters.value.type && quest.type !== filters.value.type) return false
-    if (filters.value.difficulty && quest.difficulty !== filters.value.difficulty) return false
-    if (filters.value.role && quest.role && quest.role !== filters.value.role && quest.role !== 'All') return false
-    return true
-  })
+// Pagination controls
+function changeAvailablePage(page: number) {
+  if (page < 0 || page >= totalAvailablePages.value) return
+  availablePagination.value.page = page
+  loadQuests()
+}
 
-  // Sort quests
-  filtered.sort((a, b) => {
-    let aValue: any, bValue: any
-    
-    switch (sortBy.value) {
-      case 'title':
-        aValue = a.title.toLowerCase()
-        bValue = b.title.toLowerCase()
-        break
-      case 'difficulty':
-        aValue = Object.values(QuestDifficulty).indexOf(a.difficulty)
-        bValue = Object.values(QuestDifficulty).indexOf(b.difficulty)
-        break
-      case 'experience':
-        aValue = a.experienceReward
-        bValue = b.experienceReward
-        break
-      case 'level':
-        aValue = a.requiredLevel
-        bValue = b.requiredLevel
-        break
-      default:
-        return 0
-    }
-    
-    if (sortDirection.value === 'asc') {
-      return aValue < bValue ? -1 : aValue > bValue ? 1 : 0
-    } else {
-      return aValue > bValue ? -1 : aValue < bValue ? 1 : 0
-    }
-  })
+// Verification helpers
+const findUserQuest = (questId: string) => availableQuests.value.find(uq => uq.quest?.id === questId)
+const needsVerification = (quest: Quest) => {
+  const uq = findUserQuest(quest.id)
+  return !!(uq && uq.status === UserQuestStatus.USER_COMPLETED && !uq.verified)
+}
+const isVerified = (quest: Quest) => {
+  const uq = findUserQuest(quest.id)
+  return !!(uq && uq.status === UserQuestStatus.USER_VERIFIED)
+}
 
-  return filtered
-})
+// Filtering and sorting logic remains the same...
 
 /**
  * GitHub quests computed property
@@ -510,6 +428,57 @@ watch(() => userStore.user?.id, (newUserId) => {
 watch(activeTab, () => {
   error.value = null
 })
+
+// Define filteredQuests once
+const filteredQuests = computed(() => {
+  let questsToFilter: Quest[] = []
+  const questsArray = Array.isArray(quests.value) ? quests.value : []
+  switch (activeTab.value) {
+    case 'available': questsToFilter = questsArray.filter(q => q.status === QuestStatus.AVAILABLE); break
+    case 'completed': questsToFilter = Array.isArray(completedQuests.value) ? completedQuests.value : []; break
+    case 'github': questsToFilter = questsArray.filter(q => q.type === QuestType.GITHUB_ISSUE); break
+    default: questsToFilter = questsArray.filter(q => q.status === QuestStatus.AVAILABLE)
+  }
+  let filtered = questsToFilter.filter(q => {
+    if (filters.value.type && q.type !== filters.value.type) return false
+    if (filters.value.difficulty && q.difficulty !== filters.value.difficulty) return false
+    if (filters.value.role && q.role && q.role !== filters.value.role && q.role !== 'All') return false
+    return true
+  })
+  filtered.sort((a,b)=>{
+    const dir = sortDirection.value === 'asc' ? 1 : -1
+    switch (sortBy.value) {
+      case 'title': return a.title.localeCompare(b.title) * dir
+      case 'difficulty': return (Object.values(QuestDifficulty).indexOf(a.difficulty) - Object.values(QuestDifficulty).indexOf(b.difficulty)) * dir
+      case 'experience': return (a.experienceReward - b.experienceReward) * dir
+      case 'level': return (a.requiredLevel - b.requiredLevel) * dir
+      default: return 0
+    }
+  })
+  return filtered
+})
+
+// Single acceptQuest definition
+const acceptQuest = async (quest: Quest) => {
+  if (!userStore.user?.id) { error.value = 'Login required'; return }
+  try {
+    const res = await questService.acceptQuest(quest.id)
+    if (res.success && res.data) {
+      const uq = res.data
+      const idx = availableQuests.value.findIndex(a => a.questId === uq.questId)
+      if (idx >= 0) {
+        availableQuests.value[idx] = uq
+      } else {
+        availableQuests.value.push(uq)
+      }
+      quest.status = QuestStatus.ACTIVE
+    } else {
+      error.value = res.error?.message || 'Failed to accept'
+    }
+  } catch {
+    error.value = 'Failed to accept quest'
+  }
+}
 </script>
 
 <template>
@@ -804,6 +773,22 @@ watch(activeTab, () => {
               >
                 Abandon Quest
               </button>
+
+              <!-- New: Verify button for completed but not verified quests -->
+              <button 
+                v-if="quest.status === QuestStatus.COMPLETED && needsVerification(quest)"
+                class="btn btn-warning"
+                @click="verifyQuest(quest)"
+              >
+                Verify
+              </button>
+              <button 
+                v-if="quest.status === QuestStatus.COMPLETED && isVerified(quest)"
+                disabled
+                class="btn btn-success btn-ghost"
+              >
+                Verified
+              </button>
               
               <button 
                 class="btn btn-ghost"
@@ -828,7 +813,9 @@ watch(activeTab, () => {
             :key="quest.id"
             class="quest-card card completed"
           >
-            <div class="completion-badge">✅ Completed</div>
+            <div :class="['completion-badge', needsVerification(quest) ? 'pending-verify' : isVerified(quest) ? 'verified' : '']">
+              {{ isVerified(quest) ? '✅ Verified' : needsVerification(quest) ? '⏳ Pending Verification' : '✅ Completed' }}
+            </div>
             
             <div class="quest-header">
               <div class="quest-category">
@@ -853,6 +840,20 @@ watch(activeTab, () => {
             </div>
             
             <div class="quest-actions">
+              <button 
+                v-if="needsVerification(quest)"
+                class="btn btn-warning"
+                @click="verifyQuest(quest)"
+              >
+                Verify
+              </button>
+              <button 
+                v-if="isVerified(quest)"
+                disabled
+                class="btn btn-success btn-ghost"
+              >
+                Verified
+              </button>
               <button 
                 class="btn btn-ghost"
                 @click="openQuestModal(quest)"
@@ -938,6 +939,13 @@ watch(activeTab, () => {
               </button>
             </div>
           </div>
+        </div>
+
+        <!-- Available Quests pagination controls -->
+        <div v-if="activeTab === 'available' && availablePagination.total > availablePagination.size" class="pagination-controls">
+          <button class="btn btn-ghost btn-sm" :disabled="availablePagination.page === 0" @click="changeAvailablePage(availablePagination.page - 1)">Prev</button>
+          <span>Page {{ availablePagination.page + 1 }} / {{ totalAvailablePages }}</span>
+          <button class="btn btn-ghost btn-sm" :disabled="availablePagination.page + 1 >= totalAvailablePages" @click="changeAvailablePage(availablePagination.page + 1)">Next</button>
         </div>
       </div>
 

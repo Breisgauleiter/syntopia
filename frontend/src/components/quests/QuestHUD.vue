@@ -41,11 +41,15 @@ const loadPrimaryQuest = async () => {
   try {
     const response = await questService.getUserQuests()
     if (response.success && response.data) {
-      const activeQuests = response.data.filter(uq => uq.status === UserQuestStatus.USER_ACTIVE)
+      const list = Array.isArray((response.data as any).data) ? (response.data as any).data : response.data
+      const activeQuests = list.filter((uq: any) => uq.status === UserQuestStatus.USER_ACTIVE)
       if (activeQuests.length > 0 && activeQuests[0].quest) {
         primaryQuest.value = activeQuests[0].quest
-        objectives.value = [{ id: "1", text: primaryQuest.value.description || "Complete quest", completed: false }]
-        questProgress.value = Math.floor((activeQuests[0].progress || 0) * 100)
+        const description = primaryQuest.value ? primaryQuest.value.description : ''
+        objectives.value = [{ id: "1", text: description || "Complete quest", completed: false }]
+        // Backend progress likely 0-100 already or 0-1? Normalize: if <=1 treat as fraction
+        const rawProgress = activeQuests[0].progress || 0
+        questProgress.value = rawProgress <= 1 ? Math.floor(rawProgress * 100) : Math.floor(rawProgress)
       }
     }
   } catch (error) {

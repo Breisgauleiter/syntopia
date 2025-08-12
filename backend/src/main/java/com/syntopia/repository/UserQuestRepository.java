@@ -29,25 +29,25 @@ public interface UserQuestRepository extends ArangoRepository<UserQuest, String>
      * Find all quests for a specific user
      * Note: Using AQL queries because @From/@To references require graph traversal
      */
-    @Query("FOR uq IN user_quests FILTER uq._from == CONCAT('users/', @userId) RETURN uq")
+    @Query("FOR uq IN user_quests FILTER uq._from == CONCAT('users/', @userId) LET quest = DOCUMENT(uq._to) RETURN MERGE(uq, { quest: quest })")
     List<UserQuest> findByUserId(@Param("userId") String userId);
 
     /**
      * Find all users working on a specific quest
      */
-    @Query("FOR uq IN user_quests FILTER uq._to == CONCAT('quests/', @questId) RETURN uq")
+    @Query("FOR uq IN user_quests FILTER uq._to == CONCAT('quests/', @questId) LET quest = DOCUMENT(uq._to) RETURN MERGE(uq, { quest: quest })")
     List<UserQuest> findByQuestId(@Param("questId") String questId);
 
     /**
      * Find specific user-quest relationship
      */
-    @Query("FOR uq IN user_quests FILTER uq._from == CONCAT('users/', @userId) AND uq._to == CONCAT('quests/', @questId) RETURN uq")
+    @Query("FOR uq IN user_quests FILTER uq._from == CONCAT('users/', @userId) AND uq._to == CONCAT('quests/', @questId) LET quest = DOCUMENT(uq._to) RETURN MERGE(uq, { quest: quest })")
     Optional<UserQuest> findByUserIdAndQuestId(@Param("userId") String userId, @Param("questId") String questId);
 
     /**
      * Find user's quests by status
      */
-    @Query("FOR uq IN user_quests FILTER uq._from == CONCAT('users/', @userId) AND uq.status == @status RETURN uq")
+    @Query("FOR uq IN user_quests FILTER uq._from == CONCAT('users/', @userId) AND uq.status == @status LET quest = DOCUMENT(uq._to) RETURN MERGE(uq, { quest: quest })")
     List<UserQuest> findByUserIdAndStatus(@Param("userId") String userId, @Param("status") UserQuest.UserQuestStatus status);
 
     /**
