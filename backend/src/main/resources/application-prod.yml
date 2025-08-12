@@ -52,8 +52,6 @@ logging:
 # Server Configuration for Production
 server:
   port: 8080
-  servlet:
-    context-path: /api
   tomcat:
     max-threads: 200
     min-spare-threads: 10

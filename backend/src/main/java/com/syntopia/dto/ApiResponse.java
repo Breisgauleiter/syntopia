@@ -62,6 +62,17 @@ public class ApiResponse {
         response.put("details", details);
         return response;
     }
+
+    /**
+     * Create an error response with additional structured details
+     */
+    public static Map<String, Object> error(String message, Object details) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("error", message);
+        response.put("details", details);
+        return response;
+    }
     
     /**
      * Create a paginated response (for lists with pagination)

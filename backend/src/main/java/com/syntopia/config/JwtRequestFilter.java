@@ -1,5 +1,6 @@
 package com.syntopia.config;
 
+import com.syntopia.security.AuthenticationUserDetailsService;
 import com.syntopia.service.UserService;
 import com.syntopia.model.User;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -27,7 +28,10 @@ import java.io.IOException;
 public class JwtRequestFilter extends OncePerRequestFilter {
 
     @Autowired
-    private UserService userService;
+    private AuthenticationUserDetailsService userDetailsService;
+
+    @Autowired
+    private UserService userService; // for domain attributes only
 
     @Autowired
     private JwtTokenUtil jwtTokenUtil;
@@ -62,13 +66,15 @@ public class JwtRequestFilter extends OncePerRequestFilter {
                 logger.error("JWT Token has expired");
             }
         } else {
-            logger.warn("JWT Token does not begin with Bearer String");
+            if (logger.isDebugEnabled()) {
+                logger.debug("Authorization header missing or not Bearer; path=" + requestPath);
+            }
         }
 
         // Once we get the token validate it.
         if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
-            UserDetails userDetails = this.userService.loadUserByUsername(username);
+            UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
 
             // if token is valid configure Spring Security to manually set authentication
             if (jwtTokenUtil.validateToken(jwtToken, userDetails)) {
@@ -86,7 +92,7 @@ public class JwtRequestFilter extends OncePerRequestFilter {
                 try {
                     request.setAttribute("username", username);
                     // Lookup user to provide email and id if available
-                    java.util.Optional<User> userOpt = this.userService.findByUsername(username);
+                    java.util.Optional<User> userOpt = userService.findByUsername(username);
                     if (userOpt.isPresent()) {
                         User u = userOpt.get();
                         if (u.getEmail() != null) {
