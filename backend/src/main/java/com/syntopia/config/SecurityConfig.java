@@ -6,6 +6,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
+import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -39,6 +41,12 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 
+    @Autowired(required = false)
+    private AuthenticationSuccessHandler oauth2SuccessHandler;
+
+    @Autowired(required = false)
+    private AuthenticationFailureHandler oauth2FailureHandler;
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -48,7 +56,7 @@ public class SecurityConfig {
             .httpBasic(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(authz -> authz
-                .requestMatchers("/api/auth/login", "/api/auth/register", "/api/health").permitAll()
+                .requestMatchers("/api/auth/login", "/api/auth/register", "/api/health", "/oauth2/**", "/login/oauth2/**").permitAll()
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().permitAll()
             )
@@ -59,6 +67,12 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .securityContext(context -> context.requireExplicitSave(false))
             .requestCache(cache -> cache.disable());
+
+        // Enable OAuth2 login (GitHub) -> after success we will generate JWT & redirect
+        http.oauth2Login(oauth -> oauth
+            .successHandler(oauth2SuccessHandler)
+            .failureHandler(oauth2FailureHandler)
+        );
 
         http.addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

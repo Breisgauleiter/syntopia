@@ -65,6 +65,17 @@ export const useUserStore = defineStore('user', () => {
     axios.defaults.headers.common['Authorization'] = `Bearer ${authData.token}`
   }
 
+  /**
+   * Lightweight token setter used by OAuth callback when backend redirects with tokens
+   * and we subsequently fetch /api/auth/me for user data. Avoids needing full AuthResponse shape.
+   */
+  const setTokens = (accessToken: string, refresh: string) => {
+    token.value = accessToken
+    localStorage.setItem('syntopia_token', accessToken)
+    if (refresh) localStorage.setItem('syntopia_refresh_token', refresh)
+    axios.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`
+  }
+
   const clearAuthData = () => {
     user.value = null
     token.value = null
@@ -316,5 +327,6 @@ export const useUserStore = defineStore('user', () => {
     selectRole,
     updateUserData,
     addExperiencePoints
+  ,setTokens
   }
 })

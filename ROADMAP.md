@@ -25,6 +25,8 @@
   - Recent alignment: ✅ UserQuestRepository AQL now inlines `quest` data (MERGE) so frontend always has quest details
   - Recent alignment: ✅ Frontend maps `UserQuest.status` to quest.status for consistent button states; reduced full reloads
   - Known gaps
+  - GitHub OAuth integration: backend oauth2Login not yet enabled; success handler & token bridge missing
+  - GitHub-linked quest verification: endpoint leverages internal data only; external GitHub issue/PR validation pending
     - Verification UI: backend verification endpoint & USER_VERIFIED status added; frontend needs verify action/button & optimistic update
     - Pagination adoption: backend pagination + UserQuestDTO (explicit userId/questId) implemented; frontend service/view must consume paginated ApiResponse
     - Onboarding generator: `OnboardingQuestGenerator` is stubbed (generate methods incomplete)
@@ -56,6 +58,7 @@
 - Cross-cutting
   - Response pattern: Aim to standardize on a unified `ApiResponse` across controllers (partially applied)
   - Types: TS types generally good; a few TODOs remain in community/profile flows
+  - GitHub Integration: User model has `githubId` & `isGitHubIntegrated`; no active OAuth login or webhook processing yet
 
 ---
 
@@ -100,6 +103,13 @@
 - Remaining: feed event reflection, backend DTO explicit direction fields, multi-page test coverage
 
 ---
+
+7) Minimal GitHub OAuth Enablement — NEW
+- Enable Spring Security oauth2Login with GitHub provider
+- Success handler: create/link user (githubId, avatar, displayName), issue JWT + refresh, redirect to frontend callback
+- Frontend callback route: consume token params, fetch /api/auth/me, mark user integrated
+- Profile: "Connect GitHub" button (visible if level >=4 and not integrated)
+- Acceptance: After linking, quests of type GITHUB_ISSUE can be accepted & verification can later query GitHub
 
 ## Near Term (Weeks 3–4)
 
@@ -146,6 +156,11 @@
 
 ---
 
+- GitHub Quest Verification (NEXT)
+  - Add backend verification logic for GITHUB_ISSUE quests (issue closed / PR merged + author check)
+  - Add verify button in UI for applicable quests (optimistic -> USER_VERIFIED, rollback on failure)
+  - Optional: Introduce lightweight polling or manual refresh button for GitHub status
+
 ## Milestones and Deliverables
 
 Milestone A — Community Data Live (end of Week 2) - ✅ **COMPLETED**
@@ -161,6 +176,10 @@ Milestone B — Profile Insights Real (end of Week 2) — PARTIAL (backend endpo
 Milestone C — Onboarding Generator + Quest Lists (end of Week 4)
 Milestone D — Connections UX Polish (added)
 - Criteria: Feed event reflection, error toasts with retries, connection direction fields explicit, pagination edge tests (frontend/backend), live update mechanism (polling or SSE v1)
+Milestone E — GitHub Integration Foundation (added)
+- Criteria: OAuth login flow live; user linking persisted; basic GITHUB_ISSUE quest acceptance & manual verification path defined
+Milestone F — GitHub Quest Verification (added)
+- Criteria: Verification endpoint validates issue/PR via GitHub API; UI verify button; XP award & feed event
 - Generator implemented and seeded
 - Quest endpoints for active/completed lists finalized (backend endpoints present; generator pending)
 
@@ -179,6 +198,16 @@ Milestone D — Connections UX Polish (added)
   - Add types for community DTOs; remove any `any` usage in views (CommunityView feed mapping still uses `any`)
   - Small UI polish for loading/empty/error states
   - Add accessibility: ARIA roles for connections lists & live region for pagination updates
+  - Add OAuth callback page & token handling util
+
+- GitHub Integration
+  - Add `spring-boot-starter-oauth2-client` dependency
+  - SecurityConfig: allow `/oauth2/**`, enable `oauth2Login()` with success/failure handlers
+  - Success handler: map attributes (id, login, name, avatar_url, email) → user; generate JWT & redirect
+  - Frontend: `/oauth/callback` route + store method to finalize login
+  - Config: `app.frontend.base-url` now reads `${FRONTEND_BASE_URL}` env override for prod domains
+  - Hardening (planned): Add OAuth `state` (nonce) generation & validation in session or short-lived store to mitigate CSRF; future PR
+  - Future: GitHub issue/PR polling or webhooks for quest verification
 
 - Infra/ops
   - Ensure avatar upload path exists and is configurable; add cleanup policy
@@ -217,18 +246,26 @@ Milestone D — Connections UX Polish (added)
 3. ✅ ~~Align frontend `community.service.ts` with new backend DTOs and test integration~~ **COMPLETED**
 4. ✅ Quest user endpoints refactor: DTO + pagination + verification (backend)
 5. Community connections feed integration & direction fields + pagination edge tests
-6. Quests frontend adoption of DTO/pagination + verification UI & tests
-7. Profile achievements/social: implement TAO queries; finish profile save handling
-8. OnboardingQuestGenerator implementation + seeding path
-9. Sweep for ApiResponse consistency across remaining controllers; add minimal tests/docs
-10. CI workflows for backend/frontend unit tests (optional E2E) to protect PRs
-11. Live update mechanism (polling → potential SSE) for connections/feed
+6. Minimal GitHub OAuth enablement (branch: feature/github-oauth)
+7. Quests frontend adoption of DTO/pagination + verification UI & tests
+8. GitHub quest verification backend & UI (issue/PR status checks)
+9. Profile achievements/social: implement TAO queries; finish profile save handling
+10. OnboardingQuestGenerator implementation + seeding path
+11. Sweep for ApiResponse consistency across remaining controllers; add minimal tests/docs
+12. CI workflows for backend/frontend unit tests (optional E2E) to protect PRs
+13. Live update mechanism (polling → potential SSE) for connections/feed
 
 ### Recent Additions Summary
 - Connections: optimistic lifecycle store, pagination & filtering UI, integration + rollback tests
 - Toast notification system (global) replacing alert usage in Community & Profile views
 - Component test for connections accept + decline rollback; store tests expanded
 - Styling: connections filters bar with responsive layout
+  
+### Newly Planned (GitHub Integration)
+- OAuth flow & success handler
+- Quest verification integration with GitHub issues/PRs
+- Frontend callback + token ingestion
+- Future webhooks for push-based quest status updates
 
 ---
 
