@@ -1,5 +1,5 @@
 # Syntopia Project Roadmap
-*Updated: August 2025 — Focused, actionable, and truthful status*
+*Updated: August 2025 (mid) — Focused, actionable, and truthful status*
 
 ---
 
@@ -44,10 +44,12 @@
   - Repositories: ✅ `UserCollaborationRepository`, `UserProjectRepository`, `UserQuestRepository` enhanced with comprehensive AQL queries
   - Data Layer: ✅ All community endpoints now return persisted data (feed, connections, projects, leaderboard, stats)
   - Frontend: ✅ Contracts aligned; `community.service.ts` normalizes payloads (projects pagination, leaderboard entries); `CommunityView.vue` now uses the service exclusively; basic pagination and error handling wired
+  - New (Aug mid): ✅ Connections Pinia store with optimistic send/accept/decline/cancel; ✅ pagination & filtering (status/direction) + UI controls; ✅ toast notification system integrated (Community/Profile); ✅ component + store tests for optimistic lifecycle & rollback
   - Known gaps
-    - Testing: Integration tests for community flows and pagination edge cases
-    - Connections UI flow: Validate request → pending → accept/decline end-to-end in UI
-    - Pending connection DTO: ensure payload includes `fromUserId` and `toUserId` so UI can render directionality
+    - Feed reflection: ensure accepted/declined connection events appear promptly (may require polling or SSE next)
+    - DTO completeness: confirm connections endpoint returns both `fromUserId` & `toUserId` (direction currently inferred; explicit fields reduce logic)
+    - Pagination edge tests: add frontend tests for multi-page load & filter resets; backend tests for boundary (empty last page)
+    - Error surfaces: toast on load failures & retry affordance (basic errors logged only now)
 
   - Testing: Backend MockMvc and frontend Vitest + Playwright scaffolding added; backend and unit tests green locally; see TESTING.md for commands
 
@@ -91,10 +93,11 @@
 - OnboardingView auto-accepts on mount/role-select if not completed
 - Tracker listens to onboarding acceptance events and refreshes active list
 
-6) Community connections flow validation — NEW
-- Send a connection request, confirm it appears as pending, and simulate accept/decline
-- Acceptance: Request/accept/decline reflected in `/connections` and feed where applicable
-- Acceptance: Request/accept/decline reflected in `/connections` and feed where applicable; DTO exposes `fromUserId` and `toUserId`
+6) Community connections flow validation — IN PROGRESS
+- ✅ Store + optimistic lifecycle + pagination + filters
+- ✅ Component integration tests (accept success, decline failure rollback)
+- ✅ UI controls for status/direction + Load More
+- Remaining: feed event reflection, backend DTO explicit direction fields, multi-page test coverage
 
 ---
 
@@ -108,6 +111,19 @@
 - Unified ApiResponse pattern
   - Progress: UserQuestController migrated (pagination + DTO). Remaining controllers (Profile, Quest, Community) to standardize.
   - Acceptance: All controllers return `{ success, data, error?, pagination? }`
+
+- Quest frontend adoption (NEXT)
+  - Implement verification button + optimistic USER_VERIFIED transition
+  - Consume paginated `{ data, pagination }` in list views & update tests
+  - Remove legacy derivation logic after DTO adoption complete
+
+- Community enhancements (NEXT)
+  - Add connection feed polling or lightweight SSE for live updates
+  - Add pagination & filter E2E test (Playwright) for connections
+  - Surface errors with retry button in Connections section
+
+- Profile achievements/social (carry-over)
+  - Replace mock achievements/social with real TAO aggregation & persist additional profile fields
 
 - Basic notifications (non-realtime)
   - Add server-side events (initial), or simple polling for community events
@@ -138,11 +154,13 @@ Milestone A — Community Data Live (end of Week 2) - ✅ **COMPLETED**
 - ✅ All service methods use real persistence instead of mocks
 - Next: Frontend service alignment and integration testing
 
-Milestone B — Profile Insights Real (end of Week 2)
+Milestone B — Profile Insights Real (end of Week 2) — PARTIAL (backend endpoints present; queries pending)
 - Achievements/social from graph queries
 - Profile editing persists bio/social links
 
 Milestone C — Onboarding Generator + Quest Lists (end of Week 4)
+Milestone D — Connections UX Polish (added)
+- Criteria: Feed event reflection, error toasts with retries, connection direction fields explicit, pagination edge tests (frontend/backend), live update mechanism (polling or SSE v1)
 - Generator implemented and seeded
 - Quest endpoints for active/completed lists finalized (backend endpoints present; generator pending)
 
@@ -157,9 +175,10 @@ Milestone C — Onboarding Generator + Quest Lists (end of Week 4)
   - ✅ Feed aggregation: union queries with real data from multiple sources
 
 - Frontend quality
-  - Replace remaining direct `api.*` calls with services
-  - Add types for community DTOs; remove any `any` usage in views
+  - Replace remaining direct `api.*` calls with services (audit leftover views)
+  - Add types for community DTOs; remove any `any` usage in views (CommunityView feed mapping still uses `any`)
   - Small UI polish for loading/empty/error states
+  - Add accessibility: ARIA roles for connections lists & live region for pagination updates
 
 - Infra/ops
   - Ensure avatar upload path exists and is configurable; add cleanup policy
@@ -191,18 +210,25 @@ Milestone C — Onboarding Generator + Quest Lists (end of Week 4)
 
 ---
 
-## Sequenced Work Plan
+## Sequenced Work Plan (refreshed)
 
 1. ✅ ~~Align community service contracts (frontend + backend) and remove direct calls~~ **COMPLETED**
 2. ✅ ~~Implement community AQL + repositories; wire real data for feed/connections/projects/leaderboard~~ **COMPLETED**
 3. ✅ ~~Align frontend `community.service.ts` with new backend DTOs and test integration~~ **COMPLETED**
 4. ✅ Quest user endpoints refactor: DTO + pagination + verification (backend)
-5. Community connections E2E: request → pending → accept/decline; reflect in UI and feed
+5. Community connections feed integration & direction fields + pagination edge tests
 6. Quests frontend adoption of DTO/pagination + verification UI & tests
 7. Profile achievements/social: implement TAO queries; finish profile save handling
 8. OnboardingQuestGenerator implementation + seeding path
 9. Sweep for ApiResponse consistency across remaining controllers; add minimal tests/docs
 10. CI workflows for backend/frontend unit tests (optional E2E) to protect PRs
+11. Live update mechanism (polling → potential SSE) for connections/feed
+
+### Recent Additions Summary
+- Connections: optimistic lifecycle store, pagination & filtering UI, integration + rollback tests
+- Toast notification system (global) replacing alert usage in Community & Profile views
+- Component test for connections accept + decline rollback; store tests expanded
+- Styling: connections filters bar with responsive layout
 
 ---
 

@@ -1,6 +1,8 @@
 <template>
   <div class="community-view">
     <div class="container">
+    <!-- Live region for connection feedback -->
+    <div aria-live="polite" class="visually-hidden" v-if="connectionFeedback">{{ connectionFeedback }}</div>
       <!-- Header -->
       <div class="community-header">
         <h1 class="page-title">Syntopia Community</h1>
@@ -190,8 +192,41 @@
         <div v-if="activeTab === 'connections'" class="tab-panel">
           <div class="connections-container">
             <h2><i class="fas fa-users"></i> Your Connections</h2>
+            <!-- Filters & Pagination Controls -->
+            <div class="connections-filters" v-if="!connectionsStore.loading">
+              <div class="filter-group">
+                <label>Status:</label>
+                <select v-model="statusFilterLocal" @change="applyConnectionFilters" class="filter-select sm">
+                  <option value="">All</option>
+                  <option value="PENDING">Pending</option>
+                  <option value="ACCEPTED">Accepted</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label>Direction:</label>
+                <select v-model="directionFilterLocal" @change="applyConnectionFilters" class="filter-select sm">
+                  <option value="all">All</option>
+                  <option value="in">Incoming</option>
+                  <option value="out">Outgoing</option>
+                </select>
+              </div>
+              <div class="pagination-meta" v-if="connectionsStore.pagination.total">
+                <span>{{ connectionsStore.pagination.total }} total</span>
+                <span v-if="connectionsStore.pagination.hasMore">• more available</span>
+              </div>
+              <div class="actions">
+                <button 
+                  v-if="connectionsStore.pagination.hasMore"
+                  class="btn btn-secondary btn-sm"
+                  @click="loadMoreConnections"
+                  :disabled="connectionsStore.loading"
+                >
+                  {{ connectionsStore.loading ? 'Loading...' : 'Load More' }}
+                </button>
+              </div>
+            </div>
             
-            <div v-if="loadingConnections" class="loading-state">
+            <div v-if="connectionsStore.loading" class="loading-state">
               <div class="loading-spinner"></div>
               <p>Loading connections...</p>
             </div>
@@ -472,7 +507,9 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useUserStore } from '@/stores/user'
- import communityService from '@/services/community.service'
+import communityService from '@/services/community.service'
+import { useToastStore } from '@/stores/toast'
+import { useConnectionsStore } from '@/stores/connections'
 
 const userStore = useUserStore()
 
@@ -480,17 +517,24 @@ const userStore = useUserStore()
 const activeTab = ref('feed')
 const loading = ref(true)
 const loadingUsers = ref(false)
-const loadingConnections = ref(false)
+// Connections handled by dedicated store now
+const connectionsStore = useConnectionsStore()
 const loadingProjects = ref(false)
 const loadingLeaderboard = ref(false)
 const connectingTo = ref<string | null>(null)
+const connectionFeedback = ref<string | null>(null)
+const toast = useToastStore()
 const respondingTo = ref<string | null>(null)
 const creatingProject = ref(false)
 const showCreateProject = ref(false)
 
 const feed = ref<any>(null)
 const users = ref<any[]>([])
-const connections = ref<any>(null)
+// Derived connections shape for template compatibility (reactive computed)
+const connections = computed(() => ({ pending: connectionsStore.pending, accepted: connectionsStore.accepted }))
+// Local filter state
+const statusFilterLocal = ref<string>('')
+const directionFilterLocal = ref<'all' | 'in' | 'out'>('all')
 const projects = ref<any[]>([])
 const leaderboard = ref<any[]>([])
 const stats = ref<any>(null)
@@ -623,40 +667,13 @@ const searchUsers = async () => {
   }
 }
 
-const loadConnections = async () => {
-  try {
-    loadingConnections.value = true
-    const result = await communityService.getConnections()
-    if (result.success) {
-      const list = (result.data?.connections || []).map((c: any) => {
-        const isOut = c?.direction ? c.direction === 'out' : (c?.fromUserId && userStore.user?.id && c.fromUserId === userStore.user.id)
-        return {
-          id: c.id,
-          type: c.type,
-          status: c.status,
-          createdAt: c.createdAt,
-          respondedAt: c.updatedAt,
-          isOutgoing: !!isOut,
-          user: {
-            displayName: c?.otherUser?.displayName,
-            profilePictureUrl: c?.otherUser?.avatarUrl,
-            selectedRole: c?.otherUser?.selectedRole,
-            currentLevel: c?.otherUser?.currentLevel
-          }
-        }
-      })
-      // Adapt into sections expected by template
-      const pending = list.filter((c: any) => (c.status || '').toUpperCase() === 'PENDING')
-      const accepted = list.filter((c: any) => (c.status || '').toUpperCase() === 'ACCEPTED')
-      connections.value = { pending, accepted }
-    } else {
-      console.error('Failed to load connections:', result.error)
-    }
-  } catch (error) {
-    console.error('Failed to load connections:', error)
-  } finally {
-    loadingConnections.value = false
-  }
+const loadConnections = async () => { await connectionsStore.loadConnections() }
+const loadMoreConnections = async () => { await connectionsStore.loadNextPage() }
+const applyConnectionFilters = async () => {
+  await connectionsStore.setFilters({
+    status: statusFilterLocal.value ? statusFilterLocal.value as 'PENDING' | 'ACCEPTED' | 'DECLINED' : undefined,
+    direction: directionFilterLocal.value
+  })
 }
 
 const loadProjects = async () => {
@@ -718,24 +735,22 @@ const loadStats = async () => {
 const sendConnectionRequest = async (toUserId: string) => {
   try {
     connectingTo.value = toUserId
-    const result = await communityService.sendConnectionRequest(toUserId, 'collaborator')
-    
-    if (result.success) {
-      // Update user's connection status
+    const ok = await connectionsStore.sendRequest(toUserId, 'collaborator')
+    if (ok) {
       const user = users.value.find(u => u.id === toUserId)
-      if (user) {
-        user.isConnected = true
-      }
-      alert('Connection request sent!')
+      if (user) user.isConnected = true
+      connectionFeedback.value = 'Connection request sent.'
+  // List auto-reactive via computed
     } else {
-      console.error('Failed to send connection request:', result.error)
-      alert('Failed to send connection request. Please try again.')
+      connectionFeedback.value = 'Failed to send connection request.'
+      console.error('Failed to send connection request (store returned false)')
     }
-  } catch (error) {
-    console.error('Failed to send connection request:', error)
-    alert('Failed to send connection request. Please try again.')
+  } catch (e) {
+    connectionFeedback.value = 'Failed to send connection request.'
+    console.error('Failed to send connection request:', e)
   } finally {
     connectingTo.value = null
+    setTimeout(() => { if (connectionFeedback.value) connectionFeedback.value = null }, 4000)
   }
 }
 
@@ -743,20 +758,18 @@ const respondToRequest = async (requestId: string, action: string) => {
   try {
     respondingTo.value = requestId
     const actionTyped = action.toLowerCase() as 'accept' | 'decline'
-    const result = await communityService.respondToConnectionRequest(requestId, actionTyped)
-    
-    if (result.success) {
-      // Reload connections
-      loadConnections()
+    const ok = await connectionsStore.respond(requestId, actionTyped)
+    if (ok) {
+  // reactive
       const actionText = actionTyped === 'accept' ? 'accepted' : 'declined'
-      alert(`Connection request ${actionText}!`)
+  toast.push(`Connection request ${actionText}!`, 'success')
     } else {
-      console.error('Failed to respond to request:', result.error)
-      alert('Failed to respond to request. Please try again.')
+      console.error('Failed to respond to request (store returned false)')
+  toast.push('Failed to respond to request. Please try again.', 'error')
     }
   } catch (error) {
     console.error('Failed to respond to request:', error)
-    alert('Failed to respond to request. Please try again.')
+  toast.push('Failed to respond to request. Please try again.', 'error')
   } finally {
     respondingTo.value = null
   }
@@ -765,17 +778,17 @@ const respondToRequest = async (requestId: string, action: string) => {
 const cancelConnection = async (connectionId: string) => {
   try {
     respondingTo.value = connectionId
-    const result = await communityService.cancelConnectionRequest(connectionId)
-    if (result.success) {
-      loadConnections()
-      alert('Connection request cancelled')
+    const ok = await connectionsStore.cancel(connectionId)
+    if (ok) {
+  // reactive
+  toast.push('Connection request cancelled', 'info')
     } else {
-      console.error('Failed to cancel connection:', result.error)
-      alert('Failed to cancel request')
+      console.error('Failed to cancel connection (store returned false)')
+  toast.push('Failed to cancel request', 'error')
     }
   } catch (e) {
     console.error('Failed to cancel connection:', e)
-    alert('Failed to cancel request')
+  toast.push('Failed to cancel request', 'error')
   } finally {
     respondingTo.value = null
   }
@@ -801,14 +814,14 @@ const createProject = async () => {
       // Reload projects
       loadProjects()
       
-      alert('Project created successfully!')
+  toast.push('Project created successfully!', 'success')
     } else {
       console.error('Failed to create project:', result.error)
-      alert('Failed to create project. Please try again.')
+  toast.push('Failed to create project. Please try again.', 'error')
     }
   } catch (error) {
     console.error('Failed to create project:', error)
-    alert('Failed to create project. Please try again.')
+  toast.push('Failed to create project. Please try again.', 'error')
   } finally {
     creatingProject.value = false
   }
@@ -1053,9 +1066,7 @@ onMounted(() => {
   margin: 0 auto;
 }
 
-.activity-feed {
-  space-y: 1rem;
-}
+
 
 .activity-item {
   background: var(--card-bg);
@@ -1264,6 +1275,7 @@ onMounted(() => {
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 
@@ -1272,9 +1284,7 @@ onMounted(() => {
 }
 
 /* Connections */
-.connections-sections {
-  space-y: 2rem;
-}
+
 
 .connection-section {
   margin-bottom: 2rem;
@@ -1286,9 +1296,7 @@ onMounted(() => {
   font-size: 1.25rem;
 }
 
-.connections-list {
-  space-y: 1rem;
-}
+
 
 .connection-item {
   background: var(--card-bg);
@@ -1356,6 +1364,78 @@ onMounted(() => {
   font-weight: 500;
 }
 
+/* Connections Filters */
+.connections-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: flex-end;
+  padding: 0.75rem 1rem 1rem;
+  margin: 0 0 1.25rem;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+}
+
+.connections-filters .filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 120px;
+}
+
+.connections-filters .filter-group label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.connections-filters .filter-select.sm {
+  padding: 0.55rem 0.65rem;
+  font-size: 0.8rem;
+  min-width: 110px;
+}
+
+.connections-filters .pagination-meta {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: auto;
+  align-items: center;
+}
+
+.connections-filters .actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.connections-filters button.btn-sm {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.75rem;
+}
+
+.connections-filters select.filter-select.sm:focus-visible {
+  outline: 2px solid var(--accent-purple);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .connections-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .connections-filters .pagination-meta {
+    margin-left: 0;
+  }
+  .connections-filters .actions {
+    justify-content: flex-start;
+  }
+}
+
 /* Projects */
 .projects-header {
   display: flex;
@@ -1416,6 +1496,7 @@ onMounted(() => {
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
 }
 
@@ -1503,9 +1584,7 @@ onMounted(() => {
   border-color: var(--accent-purple);
 }
 
-.leaderboard-list {
-  space-y: 1rem;
-}
+
 
 .leaderboard-item {
   background: var(--card-bg);
@@ -1605,9 +1684,7 @@ onMounted(() => {
   margin-bottom: 1.5rem;
 }
 
-.project-form {
-  space-y: 1rem;
-}
+
 
 .form-group {
   margin-bottom: 1rem;

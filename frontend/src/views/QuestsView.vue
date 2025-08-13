@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useUserStore } from '@/stores/user'
+// @ts-ignore - path alias resolves at build time
+import { useQuests } from '@/composables/useQuests'
 import questService, { 
   type Quest, 
   type UserQuest,
@@ -16,8 +18,20 @@ const userStore = useUserStore()
 
 // Reactive state
 const quests = ref<Quest[]>([])
-const availableQuests = ref<UserQuest[]>([])
-const completedQuests = ref<Quest[]>([])
+const { 
+  questStore,
+  available: availableQuests, 
+  completed: completedQuests, 
+  refresh: refreshQuests,
+  availablePagination,
+  completedPagination,
+  totalAvailablePages,
+  totalCompletedPages,
+  availableCount,
+  completedCount,
+  loadingAvailablePage,
+  loadingCompletedPage
+} = useQuests()
 const onboardingQuests = ref<OnboardingQuest[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -40,13 +54,7 @@ const filters = ref<QuestFilter>({
 const sortBy = ref<'title' | 'difficulty' | 'experience' | 'level'>('title')
 const sortDirection = ref<'asc' | 'desc'>('asc')
 
-// Pagination state
-const availablePagination = ref({ page: 0, size: 50, total: 0 })
-
-// Total pages computed from pagination
-const totalAvailablePages = computed(() => {
-  return availablePagination.value.size > 0 ? Math.max(1, Math.ceil(availablePagination.value.total / availablePagination.value.size)) : 1
-})
+// Pagination & counts provided by composable
 
 // Role options for filter (derived from quests + user's role)
 const roleOptions = computed<string[]>(() => {
@@ -78,68 +86,13 @@ const loadQuests = async () => {
   loading.value = true
   error.value = null
   try {
-    // Load all quests
-    const allQuestsResponse = await questService.getQuests()
-    if (allQuestsResponse.success && allQuestsResponse.data) {
-      // Backend returns {success: true, quests: [...], count: ...}
-      quests.value = allQuestsResponse.data.quests || []
-    }
-
-    // Load available quests for current user
-    if (userStore.user?.id) {
-      const availableResponse = await questService.getUserQuests(availablePagination.value.page, availablePagination.value.size)
-      if (availableResponse.success && availableResponse.data) {
-        availableQuests.value = availableResponse.data.data
-        availablePagination.value.total = availableResponse.data.pagination.total
-        // Map user-specific status onto the quest objects so UI buttons reflect personal progress
-        for (const uq of availableQuests.value) {
-          if (uq.quest) {
-            switch (uq.status) {
-              case UserQuestStatus.USER_ACTIVE:
-                uq.quest.status = QuestStatus.ACTIVE
-                break
-              case UserQuestStatus.USER_COMPLETED:
-              case UserQuestStatus.USER_VERIFIED:
-                uq.quest.status = QuestStatus.COMPLETED
-                break
-              case UserQuestStatus.USER_ABANDONED:
-                // Abandoned returns to AVAILABLE for user; keep AVAILABLE globally
-                uq.quest.status = QuestStatus.AVAILABLE
-                break
-              default:
-                uq.quest.status = QuestStatus.AVAILABLE
-            }
-            // If quest not already in global quests list, optionally push (helps when /quests missing it)
-            if (!quests.value.find(q => q.id === uq.quest!.id)) {
-              quests.value.push(uq.quest)
-            }
-          }
-        }
-      }
-    }
-
-    // Load quest statistics
-    const statsResponse = await questService.getUserQuestStatistics()
-    if (statsResponse.success) {
-      questStats.value = {
-        ...questStats.value,
-        ...statsResponse.data
-      }
-    }
-
-    // Filter completed quests
-    completedQuests.value = Array.isArray(quests.value) ? 
-      quests.value.filter(quest => quest.status === QuestStatus.COMPLETED) : []
-
-    // Load onboarding quests if user has selected a role
+  await refreshQuests()
+  quests.value = questStore.quests
     await loadOnboardingQuests()
-
   } catch (err) {
     console.error('Error loading quests:', err)
     error.value = 'Failed to load quests. Please try again.'
-  } finally {
-    loading.value = false
-  }
+  } finally { loading.value = false }
 }
 
 /**
@@ -226,7 +179,7 @@ const completeQuest = async (quest: Quest) => {
         showExperienceAnimation.value = true
         setTimeout(() => showExperienceAnimation.value = false, 3000)
       }
-      loadQuests()
+  await refreshQuests()
     } else error.value = res.error?.message || 'Failed to complete quest'
   } catch {
     error.value = 'Failed to complete quest'
@@ -254,7 +207,7 @@ const abandonQuest = async (quest: Quest) => {
     const res = await questService.abandonQuest(quest.id)
     if (res.success && res.data) {
       quest.status = QuestStatus.AVAILABLE
-      loadQuests()
+  await refreshQuests()
     } else error.value = res.error?.message || 'Failed to abandon quest'
   } catch {
     error.value = 'Failed to abandon quest'
@@ -270,23 +223,35 @@ const verifyQuest = async (quest: Quest) => {
   try {
     const res = await questService.verifyQuest(quest.id)
     if (res.success && res.data) {
-      quest.status = QuestStatus.COMPLETED // stays completed; badge can show verified via userQuest status
-      loadQuests()
-    } else error.value = res.error?.message || 'Failed to verify quest'
+      quest.status = QuestStatus.COMPLETED
+      // Optimistically update associated userQuest status to USER_VERIFIED
+  const uq = availableQuests.value.find((u: any) => u.questId === quest.id || u.quest?.id === quest.id)
+      if (uq) uq.status = UserQuestStatus.USER_VERIFIED
+      // Also refresh completed quests page to reflect potential status shifts
+  await refreshQuests()
+    } else {
+      error.value = res.error?.message || 'Failed to verify quest'
+    }
   } catch {
     error.value = 'Failed to verify quest'
   }
 }
 
 // Pagination controls
-function changeAvailablePage(page: number) {
-  if (page < 0 || page >= totalAvailablePages.value) return
-  availablePagination.value.page = page
-  loadQuests()
+function changeAvailablePage(page: number) { if (page < 0 || page >= totalAvailablePages.value) return; questStore.loadAvailable(page) }
+function changeCompletedPage(page: number) { if (page < 0 || page >= totalCompletedPages.value) return; questStore.loadCompleted(page) }
+
+// Verification helpers (search both available & completed lists for robustness)
+const findUserQuest = (questId: string) => {
+  return (
+    availableQuests.value.find((uq: any) => uq.quest?.id === questId) ||
+    completedQuests.value.find((uq: any) => uq.quest?.id === questId)
+  )
 }
 
-// Verification helpers
-const findUserQuest = (questId: string) => availableQuests.value.find(uq => uq.quest?.id === questId)
+// Local convenience flags for template readability
+const availableLoading = computed(() => loadingAvailablePage.value)
+const completedLoading = computed(() => loadingCompletedPage.value)
 const needsVerification = (quest: Quest) => {
   const uq = findUserQuest(quest.id)
   return !!(uq && uq.status === UserQuestStatus.USER_COMPLETED && !uq.verified)
@@ -464,13 +429,8 @@ const acceptQuest = async (quest: Quest) => {
   try {
     const res = await questService.acceptQuest(quest.id)
     if (res.success && res.data) {
-      const uq = res.data
-      const idx = availableQuests.value.findIndex(a => a.questId === uq.questId)
-      if (idx >= 0) {
-        availableQuests.value[idx] = uq
-      } else {
-        availableQuests.value.push(uq)
-      }
+  const uq = res.data
+  questStore.updateAvailableUserQuest(uq)
       quest.status = QuestStatus.ACTIVE
     } else {
       error.value = res.error?.message || 'Failed to accept'
@@ -497,17 +457,29 @@ const acceptQuest = async (quest: Quest) => {
         <button @click="error = null" class="close-error">×</button>
       </div>
 
-      <!-- Loading Spinner -->
-      <div v-if="loading" class="loading-overlay">
-        <div class="loading-spinner"></div>
+      <!-- Section Skeletons (replace full-page overlay) -->
+  <div v-if="loading" class="initial-skeletons" role="status" aria-live="polite" aria-busy="true" aria-label="Loading quests">
+        <div class="skeleton header-skeleton glass-flat">
+          <div class="skeleton-line w-40"></div>
+          <div class="skeleton-line w-60"></div>
+        </div>
+        <div class="skeleton-cards">
+          <div class="quest-card card skeleton glass-flat" v-for="n in 3" :key="n">
+            <div class="skeleton-line w-30 mb"></div>
+            <div class="skeleton-line w-80"></div>
+            <div class="skeleton-line w-60"></div>
+            <div class="skeleton-line w-50"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Header -->
       <div class="quests-header">
-        <h1 class="page-title">Sacred Quests</h1>
+  <h1 class="page-title">Sacred Quests</h1>
         <p class="page-subtitle">
           Embark on meaningful challenges that expand consciousness and contribute to the collective
         </p>
+  <div class="sr-only" aria-live="polite">{{ availableCount }} available quests, {{ completedCount }} completed quests.</div>
         
         <!-- Onboarding Call-to-Action -->
         <div v-if="!userStore.userRole || userStore.userRole === 'None'" class="onboarding-banner glass">
@@ -653,14 +625,14 @@ const acceptQuest = async (quest: Quest) => {
           :class="{ active: activeTab === 'available' }"
           @click="activeTab = 'available'"
         >
-          Available ({{ availableQuests.length }})
+          Available ({{ availableCount }})
         </button>
         <button 
           class="tab-button"
           :class="{ active: activeTab === 'completed' }"
           @click="activeTab = 'completed'"
         >
-          Completed ({{ completedQuests.length }})
+          Completed ({{ completedCount }})
         </button>
         <button 
           class="tab-button"
@@ -675,6 +647,14 @@ const acceptQuest = async (quest: Quest) => {
       <div class="quest-content">
         <!-- Available Quests -->
         <div v-if="activeTab === 'available'" class="quest-list">
+          <!-- Page transition skeletons -->
+          <div v-if="availableLoading && !loading" class="skeleton-cards inline" role="status" aria-live="polite" aria-busy="true" aria-label="Loading available quests page">
+            <div class="quest-card card skeleton glass-flat" v-for="n in 2" :key="'a-skel-'+n">
+              <div class="skeleton-line w-30 mb"></div>
+              <div class="skeleton-line w-75"></div>
+              <div class="skeleton-line w-55"></div>
+            </div>
+          </div>
           <!-- Pinned Onboarding Highlight -->
           <div 
             v-if="hasActiveOnboardingQuests && nextOnboardingQuest"
@@ -802,6 +782,13 @@ const acceptQuest = async (quest: Quest) => {
 
         <!-- Completed Quests -->
         <div v-if="activeTab === 'completed'" class="quest-list">
+          <div v-if="completedLoading && !loading" class="skeleton-cards inline" role="status" aria-live="polite" aria-busy="true" aria-label="Loading completed quests page">
+            <div class="quest-card card skeleton glass-flat" v-for="n in 2" :key="'c-skel-'+n">
+              <div class="skeleton-line w-35 mb"></div>
+              <div class="skeleton-line w-70"></div>
+              <div class="skeleton-line w-50"></div>
+            </div>
+          </div>
           <div v-if="completedQuests.length === 0" class="empty-state card">
             <div class="empty-icon">📝</div>
             <h3>No Completed Quests Yet</h3>
@@ -943,9 +930,18 @@ const acceptQuest = async (quest: Quest) => {
 
         <!-- Available Quests pagination controls -->
         <div v-if="activeTab === 'available' && availablePagination.total > availablePagination.size" class="pagination-controls">
-          <button class="btn btn-ghost btn-sm" :disabled="availablePagination.page === 0" @click="changeAvailablePage(availablePagination.page - 1)">Prev</button>
+          <button class="btn btn-ghost btn-sm" :disabled="availablePagination.page === 0 || loadingAvailablePage" @click="changeAvailablePage(availablePagination.page - 1)">Prev</button>
           <span>Page {{ availablePagination.page + 1 }} / {{ totalAvailablePages }}</span>
-          <button class="btn btn-ghost btn-sm" :disabled="availablePagination.page + 1 >= totalAvailablePages" @click="changeAvailablePage(availablePagination.page + 1)">Next</button>
+          <div v-if="loadingAvailablePage" class="page-spinner" aria-label="Loading available quests"></div>
+          <span v-if="questStore.availablePageError" class="page-error">{{ questStore.availablePageError }}</span>
+          <button class="btn btn-ghost btn-sm" :disabled="availablePagination.page + 1 >= totalAvailablePages || loadingAvailablePage" @click="changeAvailablePage(availablePagination.page + 1)">Next</button>
+        </div>
+        <div v-if="activeTab === 'completed' && completedPagination.total > completedPagination.size" class="pagination-controls">
+          <button class="btn btn-ghost btn-sm" :disabled="completedPagination.page === 0 || loadingCompletedPage" @click="changeCompletedPage(completedPagination.page - 1)">Prev</button>
+          <span>Page {{ completedPagination.page + 1 }} / {{ totalCompletedPages }}</span>
+          <div v-if="loadingCompletedPage" class="page-spinner" aria-label="Loading completed quests"></div>
+          <span v-if="questStore.completedPageError" class="page-error">{{ questStore.completedPageError }}</span>
+          <button class="btn btn-ghost btn-sm" :disabled="completedPagination.page + 1 >= totalCompletedPages || loadingCompletedPage" @click="changeCompletedPage(completedPagination.page + 1)">Next</button>
         </div>
       </div>
 
@@ -1303,33 +1299,56 @@ const acceptQuest = async (quest: Quest) => {
   background: rgba(255, 255, 255, 0.2);
 }
 
-/* Loading Overlay */
-.loading-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+/* Skeleton & Flat Glassmorphism Styles */
+.glass-flat {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.initial-skeletons {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(2px);
+  flex-direction: column;
+  gap: 1.5rem;
+  margin: 2rem 0 3rem;
 }
 
-.loading-spinner {
-  width: 50px;
-  height: 50px;
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  border-top: 3px solid var(--color-primary);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
+.skeleton-cards.inline {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
 }
 
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+.skeleton {
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-line {
+  height: 12px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.15) 37%, rgba(255,255,255,0.06) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+}
+.skeleton-line.mb { margin-bottom: 1rem; }
+.skeleton-line.w-30 { width: 30%; }
+.skeleton-line.w-35 { width: 35%; }
+.skeleton-line.w-40 { width: 40%; }
+.skeleton-line.w-50 { width: 50%; }
+.skeleton-line.w-55 { width: 55%; }
+.skeleton-line.w-60 { width: 60%; }
+.skeleton-line.w-70 { width: 70%; }
+.skeleton-line.w-75 { width: 75%; }
+.skeleton-line.w-80 { width: 80%; }
+
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
 }
 
 .quests-header {
@@ -1509,15 +1528,18 @@ const acceptQuest = async (quest: Quest) => {
   font-weight: 600;
 }
 
-.completion-badge {
-  background: var(--color-success);
-  color: white;
-}
+.completion-badge { background: var(--color-success); color: white; }
+.completion-badge.pending-verify { background: #f59e0b; color: #1f2937; }
+.completion-badge.verified { background: linear-gradient(135deg,#10b981,#059669); box-shadow: 0 0 8px rgba(16,185,129,0.6); }
 
 .github-badge {
   background: var(--color-accent);
   color: white;
 }
+
+.pagination-controls { display: flex; align-items: center; gap: 0.75rem; margin-top: 1.5rem; }
+.page-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top: 2px solid var(--color-primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+.page-error { color: #ef4444; font-size: 0.75rem; font-weight: 500; }
 
 .quest-header {
   display: flex;

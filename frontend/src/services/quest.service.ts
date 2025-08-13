@@ -169,6 +169,16 @@ class QuestService {
     }
   }
 
+    /** Get completed quests for the current user (paginated) */
+    async getUserCompletedQuests(page = 0, size = 50): Promise<ApiResponse<Paginated<UserQuest>>> {
+      try {
+        return await apiService.get<Paginated<UserQuest>>(`/user-quests/completed?page=${page}&size=${size}`)
+      } catch (error) {
+        console.warn('⚠️ /user-quests/completed failed:', error)
+        return { success: false, error: { message: 'Failed to fetch completed user quests' } }
+      }
+    }
+
   /** Accept/Start a quest */
   async acceptQuest(questId: string): Promise<ApiResponse<UserQuest>> {
     try {

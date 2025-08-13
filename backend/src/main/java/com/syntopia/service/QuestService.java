@@ -379,6 +379,28 @@ public class QuestService {
         return stats;
     }
 
+    /**
+     * Get all onboarding user quest edges for a user (quests with metadata.isOnboardingQuest=true)
+     */
+    public List<UserQuest> getUserOnboardingUserQuests(String userId) {
+        List<UserQuest> all = userQuestRepository.findByUserId(userId);
+        // populate quest reference for each
+        for (UserQuest uq : all) {
+            if (uq.getQuest() == null) {
+                // Cannot load without quest id; skip (should not normally happen because AQL joins quest)
+                continue;
+            }
+        }
+        List<UserQuest> result = new ArrayList<>();
+        for (UserQuest uq : all) {
+            Quest q = uq.getQuest();
+            if (q != null && Boolean.TRUE.equals(q.getMetadata().get("isOnboardingQuest"))) {
+                result.add(uq);
+            }
+        }
+        return result;
+    }
+
     // ===============================
     // Quest Discovery & Filtering (Updated)
     // ===============================
@@ -556,6 +578,9 @@ public class QuestService {
 
     @Autowired
     private OnboardingQuestGenerator onboardingQuestGenerator;
+    
+        @Autowired
+        private OnboardingQuestService onboardingQuestService;
 
     /**
      * Seed onboarding quests into the regular quest database
@@ -635,19 +660,13 @@ public class QuestService {
     public UserQuest acceptOnboardingQuestForUser(String userId, String role, int level) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+        // Ensure quest definition exists via persistent onboarding quest service
+        String displayRole = mapRoleToDisplayName(role);
+        OnboardingQuest definition = onboardingQuestService.ensureQuest(displayRole, level);
 
-        // Try to find existing quest
+        // Find or create corresponding Quest entity (converted form) once
         List<Quest> matches = questRepository.findByRoleAndRequiredLevelAndStatus(role, level, Quest.QuestStatus.AVAILABLE);
-        Quest quest;
-        if (!matches.isEmpty()) {
-            quest = matches.get(0);
-        } else {
-            // Generate and save if missing
-            String displayRole = mapRoleToDisplayName(role);
-            OnboardingQuest ob = onboardingQuestGenerator.generateQuestForRoleAndLevel(displayRole, level);
-            quest = convertOnboardingQuestToQuest(ob, role, level);
-            quest = questRepository.save(quest);
-        }
+        Quest quest = matches.isEmpty() ? questRepository.save(convertOnboardingQuestToQuest(definition, role, level)) : matches.get(0);
 
         // Create or update UserQuest relation to ACTIVE
         Optional<UserQuest> existing = userQuestRepository.findByUserIdAndQuestId(userId, quest.getId());
@@ -660,6 +679,18 @@ public class QuestService {
         } else {
             userQuest = new UserQuest(user, quest);
             userQuest.markAsStarted();
+        }
+
+        // Idempotency: deactivate any other active onboarding quest of same level for this user
+        List<UserQuest> allForUser = userQuestRepository.findByUserId(userId);
+        for (UserQuest other : allForUser) {
+            if (!other.getId().equals(userQuest.getId()) && other.getQuest() != null &&
+                Boolean.TRUE.equals(other.getQuest().getMetadata().get("isOnboardingQuest")) &&
+                other.getQuest().getRequiredLevel() == level && other.isActive()) {
+                // mark as abandoned to avoid multiple active quests of same onboarding level
+                other.markAsAbandoned();
+                userQuestRepository.save(other);
+            }
         }
 
         return userQuestRepository.save(userQuest);

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useUserStore } from '@/stores/user'
-import { onMounted } from 'vue'
 import QuestPanel from '@/components/quests/QuestPanel.vue'
 import QuestTracker from '@/components/quests/QuestTracker.vue'
 import QuestHUD from '@/components/quests/QuestHUD.vue'
 import QuestNotification from '@/components/quests/QuestNotification.vue'
+import ToastHost from '@/components/ToastHost.vue'
 
 const userStore = useUserStore()
 
@@ -84,8 +84,8 @@ onMounted(async () => {
     <!-- Main Content -->
     <main class="main-content">
       <RouterView />
+      <ToastHost />
     </main>
-
     <!-- Quest System Components (only show when authenticated) -->
     <template v-if="userStore.isAuthenticated">
       <!-- Quest HUD - Shows current quest objectives -->

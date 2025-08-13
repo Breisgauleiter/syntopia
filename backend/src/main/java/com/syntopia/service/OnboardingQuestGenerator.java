@@ -531,7 +531,7 @@ public class OnboardingQuestGenerator {
     
     // === HELPER METHODS ===
     
-    private String generateQuestId(String role, int level) {
+    public String generateQuestId(String role, int level) {
         String roleCode = role.replaceAll(" ", "").toLowerCase();
         return String.format("onboarding_%s_level_%d", roleCode, level);
     }

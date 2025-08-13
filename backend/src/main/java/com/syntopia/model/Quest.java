@@ -71,6 +71,7 @@ public class Quest {
         this.updatedAt = LocalDateTime.now();
         this.status = QuestStatus.AVAILABLE;
         this.isAutoValidated = false;
+    this.metadata = new java.util.HashMap<>();
     }
 
     public Quest(String title, String description, String role, int requiredLevel) {

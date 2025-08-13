@@ -270,6 +270,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useToastStore } from '@/stores/toast'
 import api from '../services/api'
 import profileService from '../services/profile.service'
 import type { User } from '../types/api.types'
@@ -309,6 +310,7 @@ const showAvatarModal = ref(false)
 const selectedFile = ref<File | null>(null)
 const uploading = ref(false)
 const saving = ref(false)
+const toast = useToastStore()
 
 const tabs = [
   { id: 'overview', label: 'Overview', icon: 'fas fa-user' },
@@ -445,13 +447,13 @@ const uploadFile = async () => {
       profile.value = { ...profile.value!, ...result.data }
       showAvatarModal.value = false
       selectedFile.value = null
-      alert('Avatar uploaded successfully!')
+  toast.push('Avatar uploaded successfully!', 'success')
     } else {
-      alert('Failed to upload avatar: ' + result.error?.message)
+  toast.push('Failed to upload avatar: ' + (result.error?.message || ''), 'error')
     }
   } catch (error) {
     console.error('Failed to upload avatar:', error)
-    alert('Failed to upload avatar. Please try again.')
+  toast.push('Failed to upload avatar. Please try again.', 'error')
   } finally {
     uploading.value = false
   }
@@ -472,13 +474,13 @@ const saveSettings = async () => {
     
     if (result.success) {
       profile.value = { ...profile.value!, ...result.data }
-      alert('Profile updated successfully!')
+  toast.push('Profile updated successfully!', 'success')
     } else {
-      alert('Failed to save profile: ' + result.error?.message)
+  toast.push('Failed to save profile: ' + (result.error?.message || ''), 'error')
     }
   } catch (error) {
     console.error('Failed to save profile:', error)
-    alert('Failed to save profile. Please try again.')
+  toast.push('Failed to save profile. Please try again.', 'error')
   } finally {
     saving.value = false
   }

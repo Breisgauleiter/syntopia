@@ -2,16 +2,16 @@ package com.syntopia.controller;
 
 import com.syntopia.model.OnboardingQuest;
 import com.syntopia.dto.ApiResponse;
-import com.syntopia.service.OnboardingQuestGenerator;
+import com.syntopia.service.OnboardingQuestService;
 import com.syntopia.exception.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.core.Authentication;
+import java.util.Map;
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * REST Controller for managing onboarding quests
@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
 public class OnboardingController {
     
     @Autowired
-    private OnboardingQuestGenerator questGenerator;
+    private OnboardingQuestService onboardingQuestService;
 
     @Autowired
     private com.syntopia.service.QuestService questService;
@@ -33,8 +33,8 @@ public class OnboardingController {
      */
     @GetMapping("/quests")
     public ResponseEntity<?> getAllOnboardingQuests() {
-    List<OnboardingQuest> quests = questGenerator.generateAllOnboardingQuests();
-    return ResponseEntity.ok(ApiResponse.success(quests));
+        List<OnboardingQuest> quests = onboardingQuestService.getAll();
+        return ResponseEntity.ok(ApiResponse.success(quests));
     }
     
     /**
@@ -42,10 +42,7 @@ public class OnboardingController {
      */
     @GetMapping("/quests/role/{role}")
     public ResponseEntity<?> getQuestsByRole(@PathVariable String role) {
-        List<OnboardingQuest> allQuests = questGenerator.generateAllOnboardingQuests();
-        List<OnboardingQuest> roleQuests = allQuests.stream()
-            .filter(quest -> quest.getRoleDialect().equals(getRoleDialect(role)))
-            .collect(Collectors.toList());
+    List<OnboardingQuest> roleQuests = onboardingQuestService.getByRoleDisplay(role);
 
         if (roleQuests.isEmpty()) {
             throw new ResourceNotFoundException("No onboarding quests for role");
@@ -63,10 +60,7 @@ public class OnboardingController {
             throw new IllegalArgumentException("Level must be 1-4");
         }
 
-        List<OnboardingQuest> allQuests = questGenerator.generateAllOnboardingQuests();
-        List<OnboardingQuest> levelQuests = allQuests.stream()
-            .filter(quest -> quest.getLevel() == level)
-            .collect(Collectors.toList());
+    List<OnboardingQuest> levelQuests = onboardingQuestService.getByLevel(level);
 
         return ResponseEntity.ok(ApiResponse.success(levelQuests));
     }
@@ -82,8 +76,8 @@ public class OnboardingController {
             throw new IllegalArgumentException("Level must be 1-4");
         }
 
-        OnboardingQuest quest = questGenerator.generateQuestForRoleAndLevel(role, level);
-        return ResponseEntity.ok(ApiResponse.success(quest));
+    OnboardingQuest quest = onboardingQuestService.ensureQuest(role, level);
+    return ResponseEntity.ok(ApiResponse.success(quest));
     }
 
     /**
@@ -102,6 +96,109 @@ public class OnboardingController {
         var userQuest = questService.acceptOnboardingQuestForUser(userId, role, level);
         return ResponseEntity.ok(ApiResponse.success("Onboarding quest accepted", userQuest));
     }
+
+    /**
+     * Get onboarding progress summary for authenticated user
+     */
+    @GetMapping(value = "/progress", produces = "application/json")
+    public ResponseEntity<?> getOnboardingProgress(
+            Authentication authentication,
+            @RequestParam(value = "status", required = false) String statusParam,
+            @RequestParam(value = "level", required = false) String levelParam,
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "size", required = false) Integer size) {
+        String userId = authentication.getName();
+        var onboarding = questService.getUserOnboardingUserQuests(userId);
+
+        // Optional filtering by status (supports comma-separated list)
+        final java.util.Set<String> allowedStatuses;
+        if (statusParam != null && !statusParam.isBlank()) {
+            java.util.Set<String> tmp = new java.util.HashSet<>();
+            for (String s : statusParam.split(",")) {
+                String trimmed = s.trim().toUpperCase();
+                try {
+                    com.syntopia.model.UserQuest.UserQuestStatus.valueOf(trimmed); // validate
+                    tmp.add(trimmed);
+                } catch (IllegalArgumentException e) {
+                    return ResponseEntity.badRequest().body(ApiResponse.error("Invalid status value: " + s));
+                }
+            }
+            allowedStatuses = java.util.Collections.unmodifiableSet(tmp);
+        } else {
+            allowedStatuses = null;
+        }
+
+        // Optional filtering by level (supports comma-separated list)
+        final java.util.Set<Integer> allowedLevels;
+        if (levelParam != null && !levelParam.isBlank()) {
+            java.util.Set<Integer> tmpLevels = new java.util.HashSet<>();
+            for (String l : levelParam.split(",")) {
+                try {
+                    int val = Integer.parseInt(l.trim());
+                    tmpLevels.add(val);
+                } catch (NumberFormatException e) {
+                    return ResponseEntity.badRequest().body(ApiResponse.error("Invalid level value: " + l));
+                }
+            }
+            allowedLevels = java.util.Collections.unmodifiableSet(tmpLevels);
+        } else {
+            allowedLevels = null;
+        }
+
+        var filtered = onboarding.stream()
+                .filter(uq -> allowedStatuses == null || allowedStatuses.contains(uq.getStatus().name()))
+                .filter(uq -> allowedLevels == null || allowedLevels.contains(uq.getQuest().getRequiredLevel()))
+                .toList();
+
+        long completed = filtered.stream().filter(uq -> uq.getStatus() == com.syntopia.model.UserQuest.UserQuestStatus.USER_COMPLETED || uq.getStatus() == com.syntopia.model.UserQuest.UserQuestStatus.USER_VERIFIED).count();
+        long active = filtered.stream().filter(uq -> uq.getStatus() == com.syntopia.model.UserQuest.UserQuestStatus.USER_ACTIVE).count();
+        long verified = filtered.stream().filter(uq -> uq.getStatus() == com.syntopia.model.UserQuest.UserQuestStatus.USER_VERIFIED).count();
+        long total = filtered.size();
+        int maxLevelAchieved = filtered.stream().map(uq -> uq.getQuest().getRequiredLevel()).max(Integer::compareTo).orElse(0);
+
+        List<Map<String,Object>> summaries = filtered.stream().map(uq -> {
+            Map<String,Object> m = new java.util.HashMap<>();
+            m.put("questId", uq.getQuest().getId());
+            m.put("title", uq.getQuest().getTitle());
+            m.put("level", uq.getQuest().getRequiredLevel());
+            m.put("status", uq.getStatus().name());
+            m.put("progress", uq.getProgress());
+            return m;
+        }).toList();
+
+        // Pagination (optional). If page or size missing -> return all (no pagination metadata)
+        List<Map<String,Object>> pagedSummaries = summaries;
+        Map<String,Object> pagination = null;
+        if (page != null || size != null) {
+            int p = page == null ? 0 : Math.max(0, page);
+            int s = size == null ? summaries.size() : Math.max(1, size);
+            int from = Math.min(p * s, summaries.size());
+            int to = Math.min(from + s, summaries.size());
+            pagedSummaries = summaries.subList(from, to);
+            pagination = new java.util.HashMap<>();
+            pagination.put("page", p);
+            pagination.put("size", s);
+            pagination.put("total", summaries.size()); // total after filters, before pagination
+            int totalPages = (int) Math.ceil(summaries.size() / (double) s);
+            pagination.put("totalPages", totalPages);
+            pagination.put("hasNext", p + 1 < totalPages);
+            pagination.put("hasPrev", p > 0);
+        }
+
+        Map<String,Object> payload = new java.util.HashMap<>();
+        payload.put("total", total);
+        payload.put("completed", completed);
+        payload.put("verified", verified);
+        payload.put("active", active);
+        payload.put("progressPercent", total == 0 ? 0 : Math.round((completed * 100.0)/ total));
+        payload.put("maxLevelAchieved", maxLevelAchieved);
+        payload.put("quests", pagedSummaries);
+        if (pagination != null) {
+            payload.put("pagination", pagination);
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(payload));
+    }
     
     /**
      * Get all available roles
@@ -118,6 +215,16 @@ public class OnboardingController {
             "Sustainability Lead"
         );
         return ResponseEntity.ok(ApiResponse.success(roles));
+    }
+
+    /**
+     * ADMIN: Force refresh onboarding quest definition cache.
+     */
+    @PostMapping("/cache/refresh")
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> refreshOnboardingCache() {
+        onboardingQuestService.forceRefreshCache();
+        return ResponseEntity.ok(ApiResponse.success("Onboarding quest cache refreshed"));
     }
     
     /**
@@ -153,26 +260,6 @@ public class OnboardingController {
     }
     
     // Helper method to convert role names to dialects
-    private String getRoleDialect(String role) {
-        switch (role) {
-            case "Tech Development":
-                return "Codesmith";
-            case "Business Development":
-                return "Visionary";
-            case "UX Design":
-                return "Creator";
-            case "Data Science":
-                return "Analyst";
-            case "Legal Advisory":
-                return "Guardian";
-            case "Finance Analysis":
-                return "Steward";
-            case "Sustainability Lead":
-                return "Planetary Steward";
-            default:
-                return "Sacred Practitioner";
-        }
-    }
     
     // Data transfer objects
     public static class SynPrincipleInfo {

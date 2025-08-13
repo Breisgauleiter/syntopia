@@ -2,6 +2,9 @@ package com.syntopia.controller;
 
 import com.syntopia.service.QuestService;
 import com.syntopia.service.OnboardingQuestGenerator;
+import com.syntopia.service.OnboardingQuestService;
+import com.syntopia.model.UserQuest;
+import com.syntopia.model.Quest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -44,6 +47,9 @@ class OnboardingControllerTest {
     @MockBean
     private OnboardingQuestGenerator onboardingQuestGenerator;
 
+    @MockBean
+    private OnboardingQuestService onboardingQuestService;
+
     @Test
     @WithMockUser(username = "user-1", roles = {"USER"})
     void acceptOnboardingQuest_returns200() throws Exception {
@@ -69,5 +75,60 @@ class OnboardingControllerTest {
                         .param("level", "1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @WithMockUser(username = "user-1", roles = {"USER"})
+    void onboardingProgress_returns200() throws Exception {
+        // Bypass JWT filter (same approach as accept test) so request reaches controller
+        org.mockito.Mockito.doAnswer(invocation -> {
+            jakarta.servlet.FilterChain chain = invocation.getArgument(2);
+            jakarta.servlet.http.HttpServletRequest req = invocation.getArgument(0);
+            jakarta.servlet.http.HttpServletResponse res = invocation.getArgument(1);
+            chain.doFilter(req, res);
+            return null;
+        }).when(jwtRequestFilter).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+
+        // Provide UserDetails if filter consults userService
+        when(userService.loadUserByUsername(org.mockito.ArgumentMatchers.anyString()))
+            .thenReturn(org.springframework.security.core.userdetails.User.withUsername("user-1").password("").authorities("ROLE_USER").build());
+        // Prepare a sample onboarding user quest
+        UserQuest uq = new UserQuest();
+        Quest quest = new Quest();
+        quest.setId("q1");
+        quest.getMetadata().put("isOnboardingQuest", true);
+        quest.setRequiredLevel(1);
+        uq.setQuest(quest);
+        uq.setStatus(UserQuest.UserQuestStatus.USER_ACTIVE);
+
+        when(questService.getUserOnboardingUserQuests("user-1")).thenReturn(java.util.List.of(uq));
+
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/onboarding/progress")
+        .accept(org.springframework.http.MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+    .andExpect(jsonPath("$.data.total").value(1))
+        .andExpect(jsonPath("$.data.active").value(1));
+    }
+
+    @Test
+    @WithMockUser(username = "admin-1", roles = {"ADMIN"})
+    void refreshCache_adminAuthorized_returns200() throws Exception {
+        org.mockito.Mockito.doAnswer(invocation -> {
+            jakarta.servlet.FilterChain chain = invocation.getArgument(2);
+            jakarta.servlet.http.HttpServletRequest req = invocation.getArgument(0);
+            jakarta.servlet.http.HttpServletResponse res = invocation.getArgument(1);
+            chain.doFilter(req, res);
+            return null;
+        }).when(jwtRequestFilter).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+
+        when(userService.loadUserByUsername(org.mockito.ArgumentMatchers.anyString()))
+            .thenReturn(org.springframework.security.core.userdetails.User.withUsername("admin-1").password("").authorities("ROLE_ADMIN").build());
+
+        mockMvc.perform(post("/api/onboarding/cache/refresh").with(csrf())
+                .accept(org.springframework.http.MediaType.APPLICATION_JSON))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.message").value("Onboarding quest cache refreshed"));
     }
 }

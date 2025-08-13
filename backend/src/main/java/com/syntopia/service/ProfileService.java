@@ -4,6 +4,7 @@ import com.syntopia.model.User;
 import com.syntopia.repository.UserRepository;
 import com.syntopia.repository.UserQuestRepository;
 import com.syntopia.repository.UserCollaborationRepository;
+import com.syntopia.repository.UserProjectRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -32,6 +33,9 @@ public class ProfileService {
     
     @Autowired
     private UserCollaborationRepository userCollaborationRepository;
+    
+    @Autowired
+    private UserProjectRepository userProjectRepository;
 
     /**
      * Get complete user profile
@@ -69,7 +73,13 @@ public class ProfileService {
             } catch (Exception e) {
                 stats.put("connectionsCount", 0);
             }
-            stats.put("projectsCount", 0);
+            // Real projects count (membership edges)
+            try {
+                Integer projectCount = userProjectRepository.countProjects(user.getId(), true);
+                stats.put("projectsCount", projectCount != null ? projectCount : 0);
+            } catch (Exception e) {
+                stats.put("projectsCount", 0);
+            }
             // Real quest completion count (completed or verified)
             try {
                 long completed = userQuestRepository.countByUserIdAndStatus(user.getId(), com.syntopia.model.UserQuest.UserQuestStatus.USER_COMPLETED);
@@ -192,9 +202,11 @@ public class ProfileService {
             
             // Get real quest completion data
             try {
-                long completedQuests = userQuestRepository.countByUserIdAndStatus(userId, 
+                long completedQuests = userQuestRepository.countByUserIdAndStatus(userId,
                     com.syntopia.model.UserQuest.UserQuestStatus.USER_COMPLETED);
-                int questCount = (int) completedQuests;
+                long verifiedQuests = userQuestRepository.countByUserIdAndStatus(userId,
+                    com.syntopia.model.UserQuest.UserQuestStatus.USER_VERIFIED);
+                int questCount = (int) (completedQuests + verifiedQuests);
                 
                 // Achievement: First Quest Completed
                 if (questCount >= 1) {
@@ -322,8 +334,53 @@ public class ProfileService {
                 System.err.println("Error loading connection achievements: " + e.getMessage());
             }
             
-            // Add locked achievements as goals
-            // (Quest master already ensured above with progress stub)
+            // Project-based achievements
+            try {
+                Integer projectCount = userProjectRepository.countProjects(userId, true);
+                int projects = projectCount != null ? projectCount : 0;
+                if (projects >= 1) {
+                    achievements.add(createAchievement(
+                        "first_project", "First Project", "Joined or created your first project",
+                        "🧩", "completed", 120
+                    ));
+                }
+                // Collaborator (3 projects)
+                if (projects >= 3) {
+                    achievements.add(createAchievement(
+                        "project_collaborator", "Project Collaborator", "Participate in 3 projects",
+                        "🤝", "completed", 250, 3, 3
+                    ));
+                } else if (projects >= 1) {
+                    achievements.add(createAchievement(
+                        "project_collaborator", "Project Collaborator", "Participate in 3 projects (" + projects + "/3)",
+                        "🤝", "in_progress", 250, projects, 3
+                    ));
+                } else {
+                    achievements.add(createAchievement(
+                        "project_collaborator", "Project Collaborator", "Participate in 3 projects (0/3)",
+                        "🤝", "locked", 250, 0, 3
+                    ));
+                }
+                // Project contributor (5 projects)
+                if (projects >= 5) {
+                    achievements.add(createAchievement(
+                        "project_contributor", "Project Contributor", "Engaged in 5 projects",
+                        "🛠️", "completed", 400, 5, 5
+                    ));
+                } else if (projects >= 3) {
+                    achievements.add(createAchievement(
+                        "project_contributor", "Project Contributor", "Engage in 5 projects (" + projects + "/5)",
+                        "🛠️", "in_progress", 400, projects, 5
+                    ));
+                } else {
+                    achievements.add(createAchievement(
+                        "project_contributor", "Project Contributor", "Engage in 5 projects (" + projects + "/5)",
+                        "🛠️", "locked", 400, projects, 5
+                    ));
+                }
+            } catch (Exception e) {
+                System.err.println("Error loading project achievements: " + e.getMessage());
+            }
             
             Map<String, Object> result = new HashMap<>();
             result.put("achievements", achievements);
