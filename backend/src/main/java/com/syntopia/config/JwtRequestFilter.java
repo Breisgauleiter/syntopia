@@ -1,6 +1,8 @@
 package com.syntopia.config;
 
+import com.syntopia.security.AuthenticationUserDetailsService;
 import com.syntopia.service.UserService;
+import com.syntopia.model.User;
 import io.jsonwebtoken.ExpiredJwtException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -14,6 +16,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.lang.NonNull;
 import java.io.IOException;
 
 /**
@@ -25,15 +28,18 @@ import java.io.IOException;
 public class JwtRequestFilter extends OncePerRequestFilter {
 
     @Autowired
-    private UserService userService;
+    private AuthenticationUserDetailsService userDetailsService;
+
+    @Autowired
+    private UserService userService; // for domain attributes only
 
     @Autowired
     private JwtTokenUtil jwtTokenUtil;
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, 
-                                  HttpServletResponse response, 
-                                  FilterChain chain) throws ServletException, IOException {
+    protected void doFilterInternal(@NonNull HttpServletRequest request,
+                                  @NonNull HttpServletResponse response,
+                                  @NonNull FilterChain chain) throws ServletException, IOException {
 
         // Skip JWT processing for public endpoints
         String requestPath = request.getRequestURI();
@@ -60,13 +66,15 @@ public class JwtRequestFilter extends OncePerRequestFilter {
                 logger.error("JWT Token has expired");
             }
         } else {
-            logger.warn("JWT Token does not begin with Bearer String");
+            if (logger.isDebugEnabled()) {
+                logger.debug("Authorization header missing or not Bearer; path=" + requestPath);
+            }
         }
 
         // Once we get the token validate it.
         if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
-            UserDetails userDetails = this.userService.loadUserByUsername(username);
+            UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
 
             // if token is valid configure Spring Security to manually set authentication
             if (jwtTokenUtil.validateToken(jwtToken, userDetails)) {
@@ -79,6 +87,24 @@ public class JwtRequestFilter extends OncePerRequestFilter {
                 // that the current user is authenticated. So it passes the
                 // Spring Security Configurations successfully.
                 SecurityContextHolder.getContext().setAuthentication(usernamePasswordAuthenticationToken);
+
+                // Also expose useful user attributes for controllers expecting them
+                try {
+                    request.setAttribute("username", username);
+                    // Lookup user to provide email and id if available
+                    java.util.Optional<User> userOpt = userService.findByUsername(username);
+                    if (userOpt.isPresent()) {
+                        User u = userOpt.get();
+                        if (u.getEmail() != null) {
+                            request.setAttribute("email", u.getEmail());
+                        }
+                        if (u.getId() != null) {
+                            request.setAttribute("userId", u.getId());
+                        }
+                    }
+                } catch (Exception ignored) {
+                    // Do not block the request if attribute population fails
+                }
             }
         }
         chain.doFilter(request, response);

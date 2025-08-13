@@ -4,8 +4,6 @@ import com.syntopia.model.User;
 import com.syntopia.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -19,7 +17,7 @@ import java.util.Optional;
  * in the Sacred Geometry gamification system.
  */
 @Service
-public class UserService implements UserDetailsService {
+public class UserService {
 
     @Autowired
     private UserRepository userRepository;
@@ -140,25 +138,41 @@ public class UserService implements UserDetailsService {
     }
 
     /**
+     * Add a security role to a user (e.g., ROLE_ADMIN)
+     */
+    public User addRoleToUser(String userId, String role) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+        
+        if (user.getRoles() == null) {
+            user.setRoles(new java.util.HashSet<>());
+        }
+        
+        user.getRoles().add(role);
+        return userRepository.save(user);
+    }
+
+    /**
      * Save user
      */
     public User save(User user) {
         return userRepository.save(user);
     }
 
-    @Override
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
-        
-        return org.springframework.security.core.userdetails.User.builder()
-                .username(user.getUsername())
-                .password(user.getPasswordHash() != null ? user.getPasswordHash() : "") // Support both OAuth and password auth
-                .authorities("ROLE_USER")
-                .accountExpired(false)
-                .accountLocked(!user.isEnabled())
-                .credentialsExpired(false)
-                .disabled(!user.isEnabled())
-                .build();
+    // Retained for legacy calls in tests; core security now uses AuthenticationUserDetailsService
+    public UserDetails loadUserByUsername(String username) {
+    User user = userRepository.findByUsername(username)
+        .orElseThrow(() -> new IllegalArgumentException("User not found: " + username));
+    String[] authorities = user.getRoles() != null && !user.getRoles().isEmpty()
+        ? user.getRoles().toArray(new String[0])
+        : new String[]{"ROLE_USER"};
+    return org.springframework.security.core.userdetails.User.withUsername(user.getUsername())
+        .password(user.getPasswordHash() != null ? user.getPasswordHash() : "")
+        .authorities(authorities)
+        .accountExpired(false)
+        .accountLocked(!user.isEnabled())
+        .credentialsExpired(false)
+        .disabled(!user.isEnabled())
+        .build();
     }
 }

@@ -1,0 +1,223 @@
+package com.syntopia.repository;
+
+import com.syntopia.model.UserQuest;
+import com.arangodb.springframework.repository.ArangoRepository;
+import com.arangodb.springframework.annotation.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Repository;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+/**
+ * Repository for UserQuest edge relationships in ArangoDB
+ * 
+ * Manages user-specific quest progress and status tracking
+ */
+@Repository
+public interface UserQuestRepository extends ArangoRepository<UserQuest, String> {
+
+    // ===============================
+    // User-specific Quest Queries  
+    // ===============================
+
+    /**
+     * Find all quests for a specific user
+     * Note: Using AQL queries because @From/@To references require graph traversal
+     */
+    @Query("FOR uq IN user_quests FILTER uq._from == CONCAT('users/', @userId) LET quest = DOCUMENT(uq._to) RETURN MERGE(uq, { quest: quest })")
+    List<UserQuest> findByUserId(@Param("userId") String userId);
+
+    /**
+     * Find all users working on a specific quest
+     */
+    @Query("FOR uq IN user_quests FILTER uq._to == CONCAT('quests/', @questId) LET quest = DOCUMENT(uq._to) RETURN MERGE(uq, { quest: quest })")
+    List<UserQuest> findByQuestId(@Param("questId") String questId);
+
+    /**
+     * Find specific user-quest relationship
+     */
+    @Query("FOR uq IN user_quests FILTER uq._from == CONCAT('users/', @userId) AND uq._to == CONCAT('quests/', @questId) LET quest = DOCUMENT(uq._to) RETURN MERGE(uq, { quest: quest })")
+    Optional<UserQuest> findByUserIdAndQuestId(@Param("userId") String userId, @Param("questId") String questId);
+
+    /**
+     * Find user's quests by status
+     */
+    @Query("FOR uq IN user_quests FILTER uq._from == CONCAT('users/', @userId) AND uq.status == @status LET quest = DOCUMENT(uq._to) RETURN MERGE(uq, { quest: quest })")
+    List<UserQuest> findByUserIdAndStatus(@Param("userId") String userId, @Param("status") UserQuest.UserQuestStatus status);
+
+    /**
+     * Find user's active quests
+     */
+    default List<UserQuest> findActiveQuestsByUser(String userId) {
+        return findByUserIdAndStatus(userId, UserQuest.UserQuestStatus.USER_ACTIVE);
+    }
+
+    /**
+     * Find user's completed quests
+     */
+    default List<UserQuest> findCompletedQuestsByUser(String userId) {
+        return findByUserIdAndStatus(userId, UserQuest.UserQuestStatus.USER_COMPLETED);
+    }
+
+    /**
+     * Find user's available quests
+     */
+    default List<UserQuest> findAvailableQuestsByUser(String userId) {
+        return findByUserIdAndStatus(userId, UserQuest.UserQuestStatus.USER_AVAILABLE);
+    }
+
+    // ===============================
+    // Quest-specific User Queries
+    // ===============================
+
+    /**
+     * Find all users who completed a specific quest
+     */
+    default List<UserQuest> findUsersWhoCompletedQuest(String questId) {
+        return findByQuestIdAndStatus(questId, UserQuest.UserQuestStatus.USER_COMPLETED);
+    }
+
+    /**
+     * Find all users currently working on a quest
+     */
+    default List<UserQuest> findUsersWorkingOnQuest(String questId) {
+        return findByQuestIdAndStatus(questId, UserQuest.UserQuestStatus.USER_ACTIVE);
+    }
+
+    /**
+     * Find quest relationships by quest and status
+     */
+    List<UserQuest> findByQuestIdAndStatus(String questId, UserQuest.UserQuestStatus status);
+
+    // ===============================
+    // Statistics & Analytics
+    // ===============================
+
+    /**
+     * Count completed quests for a user
+     */
+    long countByUserIdAndStatus(String userId, UserQuest.UserQuestStatus status);
+
+    /**
+     * Count how many users completed a specific quest
+     */
+    long countByQuestIdAndStatus(String questId, UserQuest.UserQuestStatus status);
+
+    /**
+     * Find recently completed quests for a user
+     */
+    List<UserQuest> findByUserIdAndStatusAndCompletedAtAfter(
+            String userId, 
+            UserQuest.UserQuestStatus status, 
+            LocalDateTime after
+    );
+
+    /**
+     * Find quests with progress above threshold
+     */
+    List<UserQuest> findByUserIdAndProgressGreaterThan(String userId, int progressThreshold);
+
+    // ===============================
+    // GitHub Quest Specific
+    // ===============================
+
+    /**
+     * Find user quests that need verification (GitHub quests)
+     */
+    List<UserQuest> findByStatusAndIsVerifiedFalse(UserQuest.UserQuestStatus status);
+
+    /**
+     * Find GitHub quests by pull request URL
+     */
+    Optional<UserQuest> findByGithubPullRequestUrl(String githubPullRequestUrl);
+
+    /**
+     * Find GitHub quests by commit SHA
+     */
+    List<UserQuest> findByGithubCommitSha(String githubCommitSha);
+
+    // ===============================
+    // Pagination Support
+    // ===============================
+
+    /**
+     * Find user's quests with pagination
+     */
+    Page<UserQuest> findByUserId(String userId, Pageable pageable);
+
+    /**
+     * Find user's quests by status with pagination
+     */
+    Page<UserQuest> findByUserIdAndStatus(String userId, UserQuest.UserQuestStatus status, Pageable pageable);
+
+    // ===============================
+    // Custom AQL Queries (if needed)
+    // ===============================
+
+    /**
+     * Get recent quest completions for feed
+     */
+    @Query("""
+        FOR uq IN user_quests
+        FILTER uq.status == 'COMPLETED' AND uq.completedAt >= DATE_SUBTRACT(DATE_NOW(), @windowDays, 'day')
+        
+        LET user = DOCUMENT(uq._from)
+        LET quest = DOCUMENT(uq._to)
+        
+        SORT uq.completedAt DESC
+        LIMIT @limit
+        
+        RETURN {
+            type: 'quest_completed',
+            timestamp: uq.completedAt,
+            user: { id: user._key, displayName: user.displayName },
+            quest: { id: quest._key, title: quest.title },
+            xp: uq.xpEarned
+        }
+    """)
+    List<Map<String, Object>> findRecentCompletedQuests(@Param("windowDays") int windowDays, @Param("limit") int limit);
+
+    /**
+     * Get leaderboard data by aggregating XP and completed quests
+     */
+    @Query("""
+        FOR uq IN user_quests
+        FILTER uq.status == 'COMPLETED'
+        AND (@windowDays == null OR uq.completedAt >= DATE_SUBTRACT(DATE_NOW(), @windowDays, 'day'))
+        
+        COLLECT userId = uq._from INTO questGroups
+        LET user = DOCUMENT(userId)
+        LET totalXp = SUM(questGroups[*].uq.xpEarned)
+        LET completedCount = LENGTH(questGroups)
+        
+        SORT totalXp DESC, completedCount DESC
+        LIMIT @offset, @limit
+        
+        RETURN {
+            user: {
+                id: user._key,
+                displayName: user.displayName,
+                avatarUrl: user.profilePictureUrl,
+                currentLevel: user.currentLevel
+            },
+            xp: totalXp,
+            completed: completedCount
+        }
+    """)
+    List<Map<String, Object>> getLeaderboard(@Param("windowDays") Integer windowDays, @Param("offset") int offset, @Param("limit") int limit);
+
+    /**
+     * Count total completed quests for stats
+     */
+    @Query("FOR uq IN user_quests FILTER uq.status == 'COMPLETED' COLLECT WITH COUNT INTO total RETURN total")
+    Integer countCompletedQuests();
+
+    // Example custom query - can be added later if needed:
+    // @Query("FOR userQuest IN user_quests FILTER userQuest.userId == @userId AND userQuest.progress >= @minProgress RETURN userQuest")
+    // List<UserQuest> findByUserIdAndMinProgress(@Param("userId") String userId, @Param("minProgress") int minProgress);
+}

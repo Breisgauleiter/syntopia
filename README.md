@@ -80,6 +80,88 @@ All interface elements follow sacred geometry principles:
 - [Backend](./backend/README.md) - Spring Boot API
 - [Database](./database/README.md) - ArangoDB setup
 
+## API responses and errors
+
+All backend endpoints use a unified ApiResponse envelope:
+
+- Success with data:
+	{ "success": true, "data": { ... } }
+- Success with message and data:
+	{ "success": true, "message": "Message", "data": { ... } }
+- Error:
+	{ "success": false, "error": "Reason" }
+- Error with details:
+	{ "success": false, "error": "Reason", "details": { ... } }
+- Paginated list:
+	{ "success": true, "data": [ ... ], "pagination": { "page": 0, "size": 20, "total": 123, "totalPages": 7, "hasNext": true, "hasPrev": false } }
+
+Validation errors (400) are returned as:
+{ "success": false, "error": "Validation failed", "details": { "validationErrors": { "fieldA": "must not be blank" } } }
+
+Unauthorized (401) responses (controller-thrown or security filter entry point):
+{ "success": false, "error": "Authentication required" }
+
+Centralized handling is implemented via GlobalExceptionHandler.
+
+## Onboarding Quest API
+
+Base path: `/api/onboarding`
+
+Endpoints:
+
+- `GET /quests` – Return all onboarding quest definitions (cached).
+- `GET /quests/role/{role}` – Quests for a role display name (e.g. `Tech Development`).
+- `GET /quests/level/{level}` – Quests for a specific level (1-4).
+- `GET /quests/role/{role}/level/{level}` – Specific quest by role + level.
+- `POST /accept?role=..&level=..` – Accept (activate) an onboarding quest for the authenticated user.
+- `GET /progress` – Progress summary for the authenticated user (see filtering & pagination below).
+- `POST /cache/refresh` – ADMIN only. Forces in-memory cache refresh of quest definitions.
+
+### Progress endpoint filtering & pagination
+
+`GET /api/onboarding/progress`
+
+Query parameters (all optional):
+
+- `status` – Comma separated list of statuses to include. Allowed values: `USER_ACTIVE,USER_COMPLETED,USER_VERIFIED`. Example: `status=USER_ACTIVE,USER_COMPLETED`.
+- `level` – Comma separated list of level integers. Example: `level=1,2`.
+- `page` – 0-based page index. If omitted with `size` omitted, returns all quests with no `pagination` object.
+- `size` – Page size. If provided (alone or with `page`), pagination metadata is returned.
+
+Response shape (success):
+```
+{
+	"success": true,
+	"data": {
+		"total": 4,
+		"completed": 1,
+		"verified": 0,
+		"active": 3,
+		"progressPercent": 25,
+		"maxLevelAchieved": 2,
+		"quests": [
+			{ "questId": "onboarding_techdevelopment_level_1", "title": "...", "level": 1, "status": "USER_ACTIVE", "progress": 40 }
+		],
+		"pagination": { "page": 0, "size": 10, "total": 4, "totalPages": 1, "hasNext": false, "hasPrev": false }
+	}
+}
+```
+
+If no pagination parameters are supplied the `pagination` object is omitted and all filtered quests are returned.
+
+### Cache refresh endpoint
+
+`POST /api/onboarding/cache/refresh`
+
+Security: Requires role `ADMIN` (`ROLE_ADMIN`). Invalid / missing auth returns 403/401 via standard handlers.
+
+Response on success:
+```
+{ "success": true, "message": "Onboarding quest cache refreshed" }
+```
+
+Intended use: After adding / modifying quest definitions in persistent storage to propagate changes into the in-memory cache without restarting the service.
+
 ## 📄 License
 MIT License - See [LICENSE](./LICENSE) for details
 

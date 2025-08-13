@@ -1,25 +1,549 @@
 <template>
   <div class="profile-view">
     <div class="container">
-      <h1 class="page-title">Sacred Profile</h1>
-      
-      <div class="coming-soon card">
-        <h2>🧿 Profile Coming Soon</h2>
-        <p>Your Sacred Profile will allow you to:</p>
-        <ul>
-          <li>Customize your spiritual journey dashboard</li>
-          <li>Track your consciousness development</li>
-          <li>Manage your Sacred Role progression</li>
-          <li>View your quest achievements</li>
-          <li>Connect your GitHub contributions</li>
-        </ul>
+      <!-- Profile Header -->
+      <div class="profile-header">
+        <div class="profile-avatar">
+          <img 
+            :src="profile?.profilePictureUrl || '/default-avatar.png'" 
+            :alt="profile?.displayName || 'Profile'"
+            @error="handleImageError"
+          />
+          <div class="level-badge">{{ profile?.currentLevel || 1 }}</div>
+        </div>
+        
+        <div class="profile-info">
+          <h1 class="profile-name">{{ profile?.displayName || 'Sacred Traveler' }}</h1>
+          <div class="profile-role">{{ profile?.selectedRole || 'Exploring' }}</div>
+          <div class="profile-stats">
+            <div class="stat">
+              <span class="stat-value">{{ profile?.experiencePoints || 0 }}</span>
+              <span class="stat-label">Experience</span>
+            </div>
+            <div class="stat">
+              <span class="stat-value">{{ profile?.questsCompleted || 0 }}</span>
+              <span class="stat-label">Quests</span>
+            </div>
+            <div class="stat">
+              <span class="stat-value">{{ socialData?.connectionCount || 0 }}</span>
+              <span class="stat-label">Connections</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="profile-actions">
+          <button class="btn btn-primary" @click="editProfile">
+            <i class="fas fa-edit"></i> Edit Profile
+          </button>
+          <button class="btn btn-secondary" @click="uploadAvatar">
+            <i class="fas fa-camera"></i> Change Avatar
+          </button>
+          <button 
+            v-if="canShowGitHubButton" 
+            class="btn btn-accent" 
+            @click="connectGitHub"
+          >
+            <i class="fab fa-github"></i> Connect GitHub
+          </button>
+          <button 
+            v-else-if="profile?.isGitHubIntegrated" 
+            disabled 
+            class="btn btn-success btn-ghost"
+            title="GitHub already connected"
+          >
+            <i class="fab fa-github"></i> GitHub Linked
+          </button>
+        </div>
+      </div>
+
+      <!-- Profile Tabs -->
+      <div class="profile-tabs">
+        <button 
+          v-for="tab in tabs" 
+          :key="tab.id"
+          class="tab-button"
+          :class="{ active: activeTab === tab.id }"
+          @click="activeTab = tab.id"
+        >
+          <i :class="tab.icon"></i>
+          {{ tab.label }}
+        </button>
+      </div>
+
+      <!-- Tab Content -->
+      <div class="tab-content">
+        <!-- Overview Tab -->
+        <div v-if="activeTab === 'overview'" class="tab-panel">
+          <div class="profile-grid">
+            <!-- Bio Section -->
+            <div class="profile-card">
+              <h3><i class="fas fa-user"></i> Bio</h3>
+              <p v-if="profile?.bio" class="bio-text">{{ profile.bio }}</p>
+              <p v-else class="bio-placeholder">No bio added yet. Click Edit Profile to add one.</p>
+            </div>
+
+            <!-- Progress Section -->
+            <div class="profile-card">
+              <h3><i class="fas fa-chart-line"></i> Progress</h3>
+              <div class="progress-item">
+                <div class="progress-label">Level {{ profile?.currentLevel || 1 }} Progress</div>
+                <div class="progress-bar">
+                  <div class="progress-fill" :style="{ width: levelProgress + '%' }"></div>
+                </div>
+                <div class="progress-text">{{ profile?.experiencePoints || 0 }} / {{ nextLevelXP }} XP</div>
+              </div>
+            </div>
+
+            <!-- Achievements Section -->
+            <div class="profile-card achievements-card">
+              <h3><i class="fas fa-trophy"></i> Achievements</h3>
+              <div v-if="achievements.length" class="achievements-wrapper">
+                <div class="badges-grid">
+                  <div 
+                    v-for="achievement in unlockedAchievements" 
+                    :key="achievement.id"
+                    class="badge-item earned"
+                    :title="achievement.description"
+                  >
+                    <div class="badge-icon">{{ achievement.icon }}</div>
+                    <div class="badge-name">{{ achievement.title || achievement.name }}</div>
+                    <div v-if="achievement.progressPercent !== undefined" class="mini-progress">
+                      <div class="mini-progress-bar">
+                        <div class="mini-progress-fill" :style="{ width: achievement.progressPercent + '%' }"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div 
+                    v-for="achievement in lockedAchievements.slice(0, 6)" 
+                    :key="achievement.id + '-locked'"
+                    class="badge-item locked"
+                    :title="achievement.description"
+                  >
+                    <div class="badge-icon">{{ achievement.icon }}</div>
+                    <div class="badge-name">{{ achievement.title || achievement.name }}</div>
+                    <div v-if="achievement.progressPercent !== undefined" class="mini-progress">
+                      <div class="mini-progress-bar">
+                        <div class="mini-progress-fill" :style="{ width: achievement.progressPercent + '%' }"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="achievement-stats">
+                  <span>{{ unlockedAchievements.length }} unlocked</span>
+                  <span>•</span>
+                  <span>{{ lockedAchievements.length }} in progress/locked</span>
+                </div>
+              </div>
+              <p v-else class="no-achievements">Complete quests to earn achievements!</p>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="profile-card">
+              <h3><i class="fas fa-history"></i> Recent Activity</h3>
+              <div class="activity-placeholder">
+                <p>Quest history will be available once the quest completion tracking is implemented.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Social Tab -->
+        <div v-if="activeTab === 'social'" class="tab-panel">
+          <div class="social-grid">
+            <!-- Connections -->
+            <div class="profile-card">
+              <h3><i class="fas fa-users"></i> Connections</h3>
+              <div v-if="socialData?.collaborations?.length" class="connections-list">
+                <div 
+                  v-for="connection in socialData.collaborations.filter(c => c.status === 'ACCEPTED')" 
+                  :key="connection.user.id"
+                  class="connection-item"
+                >
+                  <img 
+                    :src="connection.user.profilePictureUrl || '/default-avatar.png'" 
+                    :alt="connection.user.displayName"
+                    class="connection-avatar"
+                  />
+                  <div class="connection-info">
+                    <div class="connection-name">{{ connection.user.displayName }}</div>
+                    <div class="connection-role">{{ connection.user.selectedRole }}</div>
+                  </div>
+                  <div class="connection-level">Lv {{ connection.user.currentLevel }}</div>
+                </div>
+              </div>
+              <p v-else class="no-connections">No connections yet. Visit the Community to connect with others!</p>
+            </div>
+
+            <!-- Projects -->
+            <div class="profile-card">
+              <h3><i class="fas fa-project-diagram"></i> Projects</h3>
+              <div v-if="socialData?.projects?.length" class="projects-list">
+                <div 
+                  v-for="project in socialData.projects" 
+                  :key="project.project.id"
+                  class="project-item"
+                >
+                  <div class="project-icon">🚀</div>
+                  <div class="project-info">
+                    <div class="project-name">{{ project.project.title }}</div>
+                    <div class="project-role">{{ project.role }}</div>
+                  </div>
+                  <div class="project-date">{{ formatDate(project.joinedAt) }}</div>
+                </div>
+              </div>
+              <p v-else class="no-projects">No collaborative projects yet. Join the community to start collaborating!</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div v-if="activeTab === 'settings'" class="tab-panel">
+          <div class="settings-grid">
+            <div class="profile-card">
+              <h3><i class="fas fa-cog"></i> Profile Settings</h3>
+              <form @submit.prevent="saveSettings" class="settings-form">
+                <div class="form-group">
+                  <label for="displayName">Display Name</label>
+                  <input 
+                    id="displayName"
+                    v-model="editForm.displayName" 
+                    type="text" 
+                    class="form-input"
+                    placeholder="Your display name"
+                  />
+                </div>
+                
+                <div class="form-group">
+                  <label for="bio">Bio</label>
+                  <textarea 
+                    id="bio"
+                    v-model="editForm.bio" 
+                    class="form-textarea"
+                    rows="4"
+                    placeholder="Tell us about your journey..."
+                  ></textarea>
+                </div>
+
+                <div class="form-group">
+                  <label>Social Links</label>
+                  <div class="social-links-editor">
+                    <div class="social-link-row" v-for="platform in socialPlatforms" :key="platform.key">
+                      <span class="platform-label">{{ platform.label }}</span>
+                      <input 
+                        v-model="editForm.socialLinks[platform.key]"
+                        :placeholder="platform.placeholder"
+                        class="form-input"
+                        type="url"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="checkbox-label">
+                    <input 
+                      v-model="editForm.isProfilePublic" 
+                      type="checkbox"
+                      class="form-checkbox"
+                    />
+                    Make profile public
+                  </label>
+                </div>
+
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-primary" :disabled="saving">
+                    {{ saving ? 'Saving...' : 'Save Changes' }}
+                  </button>
+                  <button type="button" class="btn btn-secondary" @click="resetForm">
+                    Reset
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Avatar Upload Modal -->
+    <div v-if="showAvatarModal" class="modal-overlay" @click="showAvatarModal = false">
+      <div class="modal-content" @click.stop>
+        <h3>Upload Avatar</h3>
+        <input ref="fileInput" type="file" accept="image/*" @change="handleFileSelect" />
+        <div class="modal-actions">
+          <button class="btn btn-primary" @click="uploadFile" :disabled="!selectedFile || uploading">
+            {{ uploading ? 'Uploading...' : 'Upload' }}
+          </button>
+          <button class="btn btn-secondary" @click="showAvatarModal = false">
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-// Profile functionality will be implemented here
+import { ref, onMounted, computed } from 'vue'
+import { useToastStore } from '@/stores/toast'
+import { useUserStore } from '@/stores/user'
+import api from '../services/api'
+import profileService from '../services/profile.service'
+import type { User } from '../types/api.types'
+
+interface ProfileData extends User {
+  profilePictureUrl?: string
+  bio?: string
+  socialLinks?: Record<string, string>
+  isProfilePublic?: boolean
+}
+
+interface SocialData {
+  connectionCount: number
+  connections: any[]
+  collaborations?: any[]
+  projects?: any[]
+  badges?: Record<string, boolean>
+  questHistory?: any[]
+}
+
+interface Achievement {
+  id: string
+  name: string
+  description: string
+  icon: string
+  unlockedAt?: string
+  isUnlocked: boolean
+}
+
+const profile = ref<ProfileData | null>(null)
+const socialData = ref<SocialData | null>(null)
+const achievements = ref<any[]>([])
+const loading = ref(true)
+const error = ref<string | null>(null)
+const activeTab = ref('overview')
+const showAvatarModal = ref(false)
+const selectedFile = ref<File | null>(null)
+const uploading = ref(false)
+const saving = ref(false)
+const toast = useToastStore()
+const userStore = useUserStore()
+
+const tabs = [
+  { id: 'overview', label: 'Overview', icon: 'fas fa-user' },
+  { id: 'achievements', label: 'Achievements', icon: 'fas fa-trophy' },
+  { id: 'social', label: 'Social', icon: 'fas fa-users' },
+  { id: 'settings', label: 'Settings', icon: 'fas fa-cog' }
+]
+
+const editForm = ref({
+  displayName: '',
+  bio: '',
+  isProfilePublic: true,
+  socialLinks: {
+    twitter: '',
+    github: '',
+    linkedin: ''
+  } as Record<string, string>
+})
+
+const socialPlatforms = [
+  { key: 'twitter', label: 'Twitter/X', placeholder: 'https://x.com/username' },
+  { key: 'github', label: 'GitHub', placeholder: 'https://github.com/username' },
+  { key: 'linkedin', label: 'LinkedIn', placeholder: 'https://www.linkedin.com/in/username/' }
+]
+
+const unlockedAchievements = computed(() => achievements.value.filter(a => a.status === 'completed'))
+const lockedAchievements = computed(() => achievements.value.filter(a => a.status !== 'completed'))
+
+const levelProgress = computed(() => {
+  if (!profile.value) return 0
+  const currentXP = profile.value.experiencePoints || 0
+  const currentLevel = profile.value.currentLevel || 1
+  const nextLevelXP = currentLevel * 1000 // Simple calculation
+  const levelXP = currentXP % 1000
+  return (levelXP / 1000) * 100
+})
+
+const nextLevelXP = computed(() => {
+  if (!profile.value) return 1000
+  return (profile.value.currentLevel || 1) * 1000
+})
+
+const loadProfile = async () => {
+  try {
+    loading.value = true
+    const result = await profileService.getCurrentProfile()
+    
+    if (result.success) {
+      profile.value = result.data
+      editForm.value.displayName = result.data.displayName || ''
+      editForm.value.bio = result.data.bio || ''
+      editForm.value.isProfilePublic = result.data.isProfilePublic !== false
+      if (result.data.socialLinks) {
+        editForm.value.socialLinks = { ...editForm.value.socialLinks, ...result.data.socialLinks }
+      }
+    } else {
+      error.value = result.error?.message || 'Failed to load profile'
+    }
+  } catch (err) {
+    console.error('Failed to load profile:', err)
+    error.value = 'Failed to load profile'
+  } finally {
+    loading.value = false
+  }
+}
+
+const canShowGitHubButton = computed(() => {
+  const lvlOk = (profile.value?.currentLevel || 0) >= 4
+  const notIntegrated = !profile.value?.isGitHubIntegrated && !userStore.user?.isGitHubIntegrated
+  return lvlOk && notIntegrated
+})
+
+const connectGitHub = () => {
+  try {
+    toast.push('Redirecting to GitHub...', 'info')
+    window.location.href = '/oauth2/authorization/github'
+  } catch (e) {
+    toast.push('Failed to start GitHub OAuth', 'error')
+  }
+}
+
+const loadSocialData = async () => {
+  try {
+    const result = await profileService.getSocialConnections()
+    if (result.success) {
+      const d: any = result.data || {}
+      const connections: any[] = Array.isArray(d.connections) ? d.connections : []
+
+      // Adapt backend shape to the view's expected structure
+      const collaborations = connections.map((c: any) => ({
+        status: c.status,
+        user: {
+          id: c.otherUser?.id,
+          displayName: c.otherUser?.displayName,
+          profilePictureUrl: c.otherUser?.avatarUrl,
+          selectedRole: c.otherUser?.selectedRole,
+          currentLevel: c.otherUser?.currentLevel
+        }
+      }))
+
+      socialData.value = {
+        connectionCount: d?.stats?.total ?? d?.totalConnections ?? connections.length ?? 0,
+        connections,
+        collaborations,
+        projects: Array.isArray(d.projects) ? d.projects : []
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load social data:', error)
+  }
+}
+
+const loadAchievements = async () => {
+  try {
+    const result = await profileService.getAchievements()
+    if (result.success) {
+      // Backend returns an object with { achievements: [...], totalAchievements, completedAchievements }
+      const d: any = result.data || {}
+  achievements.value = Array.isArray(d.achievements) ? d.achievements : []
+    }
+  } catch (error) {
+    console.error('Failed to load achievements:', error)
+  }
+}
+
+const editProfile = () => {
+  activeTab.value = 'settings'
+}
+
+const uploadAvatar = () => {
+  showAvatarModal.value = true
+}
+
+const handleFileSelect = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  if (target.files && target.files[0]) {
+    selectedFile.value = target.files[0]
+  }
+}
+
+const uploadFile = async () => {
+  if (!selectedFile.value) return
+  
+  try {
+    uploading.value = true
+    const result = await profileService.uploadAvatar(selectedFile.value)
+    
+    if (result.success) {
+      profile.value = { ...profile.value!, ...result.data }
+      showAvatarModal.value = false
+      selectedFile.value = null
+  toast.push('Avatar uploaded successfully!', 'success')
+    } else {
+  toast.push('Failed to upload avatar: ' + (result.error?.message || ''), 'error')
+    }
+  } catch (error) {
+    console.error('Failed to upload avatar:', error)
+  toast.push('Failed to upload avatar. Please try again.', 'error')
+  } finally {
+    uploading.value = false
+  }
+}
+
+const saveSettings = async () => {
+  try {
+    saving.value = true
+    
+    const updateData = {
+      displayName: editForm.value.displayName,
+      bio: editForm.value.bio,
+      isProfilePublic: editForm.value.isProfilePublic,
+      socialLinks: editForm.value.socialLinks
+    }
+    
+    const result = await profileService.updateProfile(updateData)
+    
+    if (result.success) {
+      profile.value = { ...profile.value!, ...result.data }
+  toast.push('Profile updated successfully!', 'success')
+    } else {
+  toast.push('Failed to save profile: ' + (result.error?.message || ''), 'error')
+    }
+  } catch (error) {
+    console.error('Failed to save profile:', error)
+  toast.push('Failed to save profile. Please try again.', 'error')
+  } finally {
+    saving.value = false
+  }
+}
+
+const resetForm = () => {
+  if (profile.value) {
+    editForm.value.displayName = profile.value.displayName || ''
+    editForm.value.bio = profile.value.bio || ''
+    editForm.value.isProfilePublic = profile.value.isProfilePublic !== false
+    if (profile.value.socialLinks) {
+      editForm.value.socialLinks = { ...editForm.value.socialLinks, ...profile.value.socialLinks }
+    }
+  }
+}
+
+const handleImageError = (event: Event) => {
+  const target = event.target as HTMLImageElement
+  target.src = '/default-avatar.png'
+}
+
+const formatDate = (dateString: string) => {
+  if (!dateString) return 'Unknown'
+  return new Date(dateString).toLocaleDateString()
+}
+
+onMounted(() => {
+  loadProfile()
+  loadSocialData()
+  loadAchievements()
+})
 </script>
 
 <style scoped>
@@ -56,6 +580,44 @@
   margin-bottom: 2rem;
   line-height: 1.6;
 }
+
+.badge-item.locked {
+  opacity: 0.55;
+  filter: grayscale(0.6);
+}
+
+.achievement-stats {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  margin-top: 0.75rem;
+  justify-content: center;
+  opacity: 0.75;
+}
+
+.social-links-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.social-link-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.platform-label {
+  font-size: 0.75rem;
+  opacity: 0.8;
+  font-weight: 500;
+}
+
+.mini-progress { width:100%; margin-top:0.15rem; }
+.mini-progress-bar { width:100%; height:4px; background:rgba(255,255,255,0.15); border-radius:2px; overflow:hidden; }
+.mini-progress-fill { height:100%; background:linear-gradient(90deg,#4ade80,#2563eb); transition:width .3s ease; }
 
 .coming-soon ul {
   text-align: left;

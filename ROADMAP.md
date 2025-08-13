@@ -1,501 +1,279 @@
-# � Syntopia Project Roadmap
-*Weltverbessernde Online-Plattform - Roadmap 2025-2027*
+# Syntopia Project Roadmap
+*Updated: August 2025 (mid) — Focused, actionable, and truthful status*
 
 ---
 
-## 🎯 Vision
-Syntopia ist eine innovative Online-Plattform, die Menschen weltweit durch gamifiziertes Beitragen verbindet und eine bessere Welt schafft. Durch kollaborative Projekte, interaktive Herausforderungen und eine wachsende Gemeinschaft entsteht ein digitaler Kosmos für positive Veränderung und menschliche Verbindung.
-
-## 📋 Current Status Assessment (August 2025)
-
-### ✅ **Completed Foundation - PRODUCTION READY**
-- **Backend Architecture**: Spring Boot 3.3.2 + Java 21 mit ArangoDB 3.11.14
-- **Authentication System**: JWT-basierte Auth mit flexible Username/Email Login (browser-tested)
-- **Database Schema**: ArangoDB TAO architecture komplett deployed mit Quest/Community collections
-- **Frontend Core**: Vue.js 3.4.29 + TypeScript + Vite mit Pinia State Management
-- **API Integration**: Vollständige Services-Layer mit Axios Interceptors und JWT token management
-- **Security**: BCrypt password hashing, JWT tokens mit Access/Refresh pattern
-- **User Management**: Complete user lifecycle (register, login, profile, role selection)
-- **Error Handling**: Robuste Error-Behandlung mit fallback values
-- **Development Environment**: Docker containerization mit Hot-Reload
-
-### 🔄 **Current Implementation Status (August 2025)**
-- **Quest Model**: ✅ Quest.java model with enums (QuestType, QuestDifficulty, QuestStatus)
-- **Quest Repository**: ✅ QuestRepository.java mit ArangoDB queries implementiert
-- **Quest Frontend**: ✅ QuestsView.vue with mock data, full UI components, quest management
-- **User Service**: ✅ Quest completion methods, experience tracking, level progression
-- **Community Views**: ⚠️ CommunityView.vue placeholder only - needs implementation
-- **Database TAO**: ✅ Edge collections für user_quests, user_collaborations, user_projects
-- **Missing**: QuestController.java, QuestService.java, Community backend implementation
-
-### 🎯 **Ready for Next Phase**
-- Core authentication foundation solid und getestet ✅
-- API architecture skalierbar für weitere Features ✅
-- Frontend-Backend integration vollständig funktional ✅
-- User experience optimiert für mobile und desktop ✅
-- Development workflow etabliert und dokumentiert ✅
-- **Quest Frontend UI**: QuestsView.vue mit vollständiger Benutzeroberfläche ready ✅
-- **Quest Model & Repository**: Backend data layer implementiert ✅
-- **Community Database**: TAO edge collections für collaboration ready ✅
-- **PHASE 1 COMPLETE** - Ready to start Phase 2: Quest & Community Systems
+## Test User (for local dev)
+- Username: `testuser`
+- Email: `testuser@syntopia.com`
+- Password: `TestPass123!`
+- Current Level: 1 (Onboarding-ready)
 
 ---
 
-## 🚀 **PHASE 2: QUEST & COMMUNITY SYSTEM** (HIGH PRIORITY)
-*August - October 2025 (2.5 months)*
+## Current Status (truthful)
 
-### 2.1 Quest System Backend Implementation � **[HIGHEST PRIORITY]**
-- [ ] **Quest Model & Controller**: Complete backend implementation for quest management
-  - QuestController.java with REST endpoints (GET, POST, PUT quests)
-  - QuestService.java with business logic for quest progression
-  - UserQuestRepository for quest-user relationships (ArangoDB edges)
-  - Quest difficulty scaling and experience calculation
+- Platform
+  - Frontend: Vue 3 + TypeScript + Vite + Pinia up and running (dev server active)
+  - Backend: Spring Boot 3 + Java 21 + ArangoDB (TAO structure seeded via init script)
+  - Local Dev: Docker compose present; VS Code tasks for frontend/backend running
 
-- [ ] **Quest API Integration**: Connect existing frontend to backend
-  - Replace mock quest data in QuestsView.vue with real API calls
-  - Implement quest acceptance, progress tracking, and completion
-  - Dynamic quest loading based on user level and role
-  - GitHub integration for Level 4+ coding quests
+- Quest System
+  - Models/Repo: `Quest`, `UserQuest`, `QuestRepository`, `UserQuestRepository` present
+  - Backend: `QuestController`/`QuestService` implemented; GitHub quest endpoints scaffolded
+  - Frontend: `quest.service.ts` with types; `QuestsView.vue` + Quest components integrated
+  - Recent alignment: ✅ UserQuestRepository AQL now inlines `quest` data (MERGE) so frontend always has quest details
+  - Recent alignment: ✅ Frontend maps `UserQuest.status` to quest.status for consistent button states; reduced full reloads
+  - Known gaps
+  - GitHub OAuth integration: backend oauth2Login not yet enabled; success handler & token bridge missing
+  - GitHub-linked quest verification: endpoint leverages internal data only; external GitHub issue/PR validation pending
+    - Verification UI: backend verification endpoint & USER_VERIFIED status added; frontend needs verify action/button & optimistic update
+    - Pagination adoption: backend pagination + UserQuestDTO (explicit userId/questId) implemented; frontend service/view must consume paginated ApiResponse
+    - Onboarding generator: `OnboardingQuestGenerator` is stubbed (generate methods incomplete)
+    - Testing: add backend tests (repository embedding, verification transition) & frontend tests (status mapping, pagination, verification)
+    - Cleanup: remove legacy derivation logic once quest.service.ts updated for DTO
+  - Frontend activation: ✅ onboarding CTAs now call `POST /api/onboarding/accept`; tracker/panels refresh active list
 
-- [ ] **User Progression System**: Level-based quest unlocking
-  - Experience point calculation and level progression
-  - Achievement system with quest completion tracking
-  - Role-specific quest paths (Sacred Mathematician, Digital Architect, etc.)
-  - Community quest collaboration features
+- Profile System
+  - Backend: `ProfileController`/`ProfileService` implemented (get/update/avatar/achievements/social)
+  - Frontend: `ProfileView.vue` integrated with `profile.service.ts`
+  - Known gaps
+    - Achievements/social in service currently sample/mocked; replace with TAO queries
+    - Some profile fields (bio/social links) not fully persisted by current save handler
 
-### 2.2 Community Platform Foundation 🤝 **[HIGH PRIORITY]**
-- [ ] **Community Features Backend**: Social interaction infrastructure
-  - CommunityController for posts, comments, and interactions
-  - User collaboration tracking and mentorship system
-  - Community project management with GitHub integration
-  - Real-time notifications for community activities
+- Community System
+  - Backend: ✅ `CommunityController` fully implemented with proper DTOs; `CommunityService` uses real ArangoDB data
+  - Repositories: ✅ `UserCollaborationRepository`, `UserProjectRepository`, `UserQuestRepository` enhanced with comprehensive AQL queries
+  - Data Layer: ✅ All community endpoints now return persisted data (feed, connections, projects, leaderboard, stats)
+  - Frontend: ✅ Contracts aligned; `community.service.ts` normalizes payloads (projects pagination, leaderboard entries); `CommunityView.vue` now uses the service exclusively; basic pagination and error handling wired
+  - New (Aug mid): ✅ Connections Pinia store with optimistic send/accept/decline/cancel; ✅ pagination & filtering (status/direction) + UI controls; ✅ toast notification system integrated (Community/Profile); ✅ component + store tests for optimistic lifecycle & rollback
+  - Known gaps
+    - Feed reflection: ensure accepted/declined connection events appear promptly (may require polling or SSE next)
+    - DTO completeness: confirm connections endpoint returns both `fromUserId` & `toUserId` (direction currently inferred; explicit fields reduce logic)
+    - Pagination edge tests: add frontend tests for multi-page load & filter resets; backend tests for boundary (empty last page)
+    - Error surfaces: toast on load failures & retry affordance (basic errors logged only now)
 
-- [ ] **Community Frontend Implementation**: Social features UI
-  - Replace CommunityView.vue placeholder with functional community platform
-  - User profile interactions and collaboration tools
-  - Discussion groups by Sacred Role and quest categories
-  - Community leaderboards and achievement showcases
+  - Testing: Backend MockMvc and frontend Vitest + Playwright scaffolding added; backend and unit tests green locally; see TESTING.md for commands
 
-- [ ] **Collaborative Quests**: Multi-user quest system
-  - Team-based quests for community building
-  - Mentor-mentee quest pairing system
-  - Community challenges with shared rewards
-  - Cross-role collaboration projects
-
-### 2.3 Enhanced Quest UI/UX ✨ **[MEDIUM PRIORITY]**
-- [ ] **Quest Component Library**: Reusable quest UI components
-  - QuestCard.vue component standardization
-  - QuestProgress.vue with sacred geometry animations
-  - AchievementBadge.vue with level progression indicators
-  - QuestFilter.vue for category and difficulty sorting
-
-- [ ] **Gamification Enhancements**: Engaging user experience
-  - Experience point animations and level-up celebrations
-  - Quest completion certificates and shareable achievements
-  - Sacred geometry progress indicators and visual feedback
-  - Mobile-optimized quest management interface
-
-**🎯 Deliverables**: Functional quest system, community platform, collaborative features
+- Cross-cutting
+  - Response pattern: Aim to standardize on a unified `ApiResponse` across controllers (partially applied)
+  - Types: TS types generally good; a few TODOs remain in community/profile flows
+  - GitHub Integration: User model has `githubId` & `isGitHubIntegrated`; no active OAuth login or webhook processing yet
 
 ---
 
-## 🎯 **PHASE 3: DESIGN SYSTEM & PWA** (LOWER PRIORITY)
-*October - December 2025 (2 months)*
+## Immediate Priorities (Weeks 1–2)
 
-### 3.1 Sacred Design System Implementation 🎨
-- [ ] **Golden Ratio Guidelines**: Implement φ (1.618) proportions in all layouts
-- [ ] **Sacred Spacing**: Use Fibonacci sequence for margins, paddings (8px, 13px, 21px, 34px, 55px)
-- [ ] **Geometry-Based Grid**: 12-column grid with golden ratio subdivisions
-- [ ] **Animation Principles**: Spiral movements, circular transitions based on sacred patterns
-- [ ] **Color Harmony**: HSB color palette derived from harmonic frequency ratios
-- [ ] **Typography Scale**: Line heights and font sizes following golden ratio progression
+1) ✅ Community backend: replace mocks with real data - **COMPLETED**
+- ✅ Added repositories: `UserCollaborationRepository`, `UserProjectRepository` with comprehensive AQL queries
+- ✅ Implemented in `CommunityService`:
+  - Feed: recent `user_quests` status changes, new projects, new connections with real aggregation
+  - Connections: request/create/accept/decline flows with edge writes and validation
+  - Projects: list/create with `user_projects` edges and member management
+  - Leaderboard/stats: aggregate via AQL (XP, completed quests) with pagination
+- ✅ All community endpoints return persisted data; no hardcoded samples
+- ✅ Created comprehensive `CommunityDTO` classes for proper API contracts
 
-### 3.2 PWA & Mobile Enhancement 📱
-- [ ] **Progressive Web App**: Service worker, offline functionality, app manifest
-- [ ] **Touch-First Interactions**: Gesture-based navigation, swipe patterns
-- [ ] **Mobile Performance**: < 3s load time, 60fps animations, image optimization
-- [ ] **Native Features**: Camera integration, haptic feedback, push notifications
-- [ ] **Responsive Enhancement**: Optimize existing responsive breakpoints
-- [ ] **Mobile-Specific UI**: Bottom navigation, mobile-optimized sacred geometry
+2) ✅ Community frontend: align contracts and centralize API usage — **COMPLETED**
+- Updated `community.service.ts` payloads to match backend DTOs; normalized projects pagination and leaderboard entries
+- Refactored `CommunityView.vue` to use only service methods; removed direct `api.*` calls
+- Wired loading/error states and minimal pagination; happy-path manual tests pass
 
-### 3.3 Enhanced UI/UX ✨
-- [ ] **Loading States**: Skeleton screens, progressive loading
-- [ ] **Micro-Interactions**: Hover states, click feedback, gesture responses
-- [ ] **Dark/Light Theme**: Sacred geometry color palette
-- [ ] **Accessibility**: WCAG 2.1 AA compliance, keyboard navigation
-- [ ] **Error Boundaries**: Graceful error handling and user feedback
-- [ ] **Performance Optimization**: Bundle splitting, lazy loading
+3) Profile achievements/social: replace samples with real queries
+- Implement TAO queries for achievements (from `user_quests`) and social connections
+- Ensure `ProfileView.vue` save handler persists bio/social fields fully
+- Acceptance: Achievements/social reflect DB state; profile update persists all edited fields
 
-**🎯 Deliverables**: Polished design system, PWA installation, mobile optimization
+4) Quest UX and endpoints: small but critical
+- Endpoints for “list active/completed/user-available”: ✅ available (verify naming/pagination)
+- UX polish: ✅ role filter, ✅ glassmorphism on tracker/panels, ✅ onboarding surfaced/pinned, ✅ active count correct with onboarding fallback
+- Backend refactor: ✅ UserQuestController now uses ApiResponse, pagination, DTO (UserQuestDTO), verification endpoint (`POST /api/user-quests/{questId}/verify`)
+- Remaining (frontend): wire verification button, adapt to paginated `{ data, pagination }` shape, update quest.service.ts to use `userQuestId`
+- Acceptance: QuestsView shows active/completed consistently; verification action transitions to USER_VERIFIED without full reload
 
----
+5) ✅ Onboarding activation wiring (frontend) — COMPLETED
+- CTAs in QuestPanel/QuestTracker/QuestsView call `POST /api/onboarding/accept`
+- OnboardingView auto-accepts on mount/role-select if not completed
+- Tracker listens to onboarding acceptance events and refreshes active list
 
-## 🚀 **PHASE 2 IMPLEMENTATION PLAN** (READY TO START - QUEST PRIORITY)
-
-### Week 1-2: Quest System Backend 🎮
-**Ziel**: Complete quest management infrastructure
-- [ ] QuestController.java with CRUD endpoints
-- [ ] QuestService.java business logic implementation
-- [ ] UserQuestRepository for progress tracking
-- [ ] Experience calculation and level progression
-- [ ] Role-specific quest filtering
-
-### Week 3-4: Quest API Integration 🔗
-**Ziel**: Connect frontend to real quest data
-- [ ] Replace mock data in QuestsView.vue with API calls
-- [ ] Implement quest acceptance and progress tracking
-- [ ] Add quest filtering by category, difficulty, level
-- [ ] GitHub quest integration for Level 4+ users
-- [ ] Quest completion and rewards system
-
-### Week 5-6: Community System Backend 🤝
-**Ziel**: Social interaction infrastructure
-- [ ] CommunityController for posts and interactions
-- [ ] User collaboration and mentorship tracking
-- [ ] Community project management
-- [ ] Real-time notification system
-- [ ] Community leaderboards and achievements
-
-### Week 7-8: Community Frontend Implementation 👥
-**Ziel**: Functional community platform
-- [ ] Replace CommunityView.vue placeholder with real features
-- [ ] User profile interactions and messaging
-- [ ] Sacred Role discussion groups
-- [ ] Community project collaboration tools
-- [ ] Achievement showcase and recognition system
-
-### Week 9-10: Enhanced Quest UI & Collaborative Features 🏆
-**Ziel**: Polished quest experience and team functionality
-- [ ] Quest component library (QuestCard, QuestProgress, etc.)
-- [ ] Experience point animations and level-up celebrations
-- [ ] Team-based quests and collaborative challenges
-- [ ] Mobile-optimized quest and community interfaces
-- [ ] Achievement certificates and social sharing
-
-**🎯 Phase 2 Success Metrics**:
-- Functional quest system with backend API
-- Community platform with user interactions
-- Collaborative quest features working
-- Mobile-responsive quest and community interfaces
-- User engagement analytics implemented
-- Level progression and achievement system operational
+6) Community connections flow validation — IN PROGRESS
+- ✅ Store + optimistic lifecycle + pagination + filters
+- ✅ Component integration tests (accept success, decline failure rollback)
+- ✅ UI controls for status/direction + Load More
+- Remaining: feed event reflection, backend DTO explicit direction fields, multi-page test coverage
 
 ---
 
-## 🚀 **Phase 3: Quest System & Community Platform**
-*November 2025 - January 2026 (3 months)*
+7) Minimal GitHub OAuth Enablement — NEW
+- Enable Spring Security oauth2Login with GitHub provider
+- Success handler: create/link user (githubId, avatar, displayName), issue JWT + refresh, redirect to frontend callback
+- Frontend callback route: consume token params, fetch /api/auth/me, mark user integrated
+- Profile: "Connect GitHub" button (visible if level >=4 and not integrated)
+- Acceptance: After linking, quests of type GITHUB_ISSUE can be accepted & verification can later query GitHub
 
-### 3.1 Advanced Quest System
-- [ ] **Backend Quest API**: Dynamic quest loading, progress tracking endpoints
-- [ ] **Quest Types**: Contribution, Learning, Social, GitHub Issue quests
-- [ ] **Difficulty Scaling**: Beginner to Expert progression system
-- [ ] **Experience System**: Point calculation, level progression, achievement unlocks
-- [ ] **Team Quests**: Collaborative challenges with shared rewards
-- [ ] **Seasonal Events**: Special time-limited quests and challenges
+## Near Term (Weeks 3–4)
 
-### 3.2 GitHub Integration (Level 4+ Feature)
-- [ ] **OAuth Flow**: GitHub authentication for advanced users
-- [ ] **Repository Integration**: Connect real GitHub issues to quests
-- [ ] **Contribution Tracking**: Monitor and reward open-source contributions
-- [ ] **Project Discovery**: Find matching projects based on user skills
-- [ ] **Achievement System**: Badges for code contributions, PRs, issues
+- Onboarding quests generator
+  - Implement `OnboardingQuestGenerator.generateAllOnboardingQuests()` and per-role/level generation
+  - Seed or expose admin endpoint to generate and store onboarding quests
+  - Acceptance: Each of 7 roles × 4 levels produces quests with XP per Fibonacci scale; visible in filters
 
-### 3.3 Community Platform Foundation
-- [ ] **Extended User Profiles**: Role progression, achievement displays
-- [ ] **Real-time Features**: WebSocket-based community interactions
-- [ ] **Discussion System**: Role-based forums and conversation threads
-- [ ] **Content Sharing**: Share sacred geometry discoveries, quest progress
-- [ ] **Mentorship Network**: Connect beginners with experienced users
-- [ ] **Event Calendar**: Virtual meditation circles, coding sessions
+- Unified ApiResponse pattern
+  - Progress: UserQuestController migrated (pagination + DTO). Remaining controllers (Profile, Quest, Community) to standardize.
+  - Acceptance: All controllers return `{ success, data, error?, pagination? }`
 
-**🎯 Deliverables**: Complete quest ecosystem, GitHub integration, active community features
+- Quest frontend adoption (NEXT)
+  - Implement verification button + optimistic USER_VERIFIED transition
+  - Consume paginated `{ data, pagination }` in list views & update tests
+  - Remove legacy derivation logic after DTO adoption complete
 
----
+- Community enhancements (NEXT)
+  - Add connection feed polling or lightweight SSE for live updates
+  - Add pagination & filter E2E test (Playwright) for connections
+  - Surface errors with retry button in Connections section
 
-## 🔮 **Phase 4: Advanced Visualizations & AR/AI**
-*February - April 2026 (3 months)*
+- Profile achievements/social (carry-over)
+  - Replace mock achievements/social with real TAO aggregation & persist additional profile fields
 
-### 4.1 Enhanced Sacred Geometry Engine
-- [ ] **Interactive Pattern Generator**: User-created sacred geometry patterns
-- [ ] **Advanced P5.js Visualizations**: 3D sacred geometry, particle systems
-- [ ] **Mathematical Tools**: Calculators for harmonic proportions, golden ratio
-- [ ] **Pattern Library**: Community-contributed sacred geometry collection
-- [ ] **Educational Content**: Interactive tutorials on design principles
-- [ ] **Export System**: High-resolution pattern exports for print/digital use
+- Basic notifications (non-realtime)
+  - Add server-side events (initial), or simple polling for community events
+  - Acceptance: User sees new connection requests and quest updates without refresh (polling acceptable)
 
-### 4.2 Augmented Reality Integration
-- [ ] **AR Pattern Viewer**: View sacred geometry in real-world spaces
-- [ ] **Mobile AR Features**: Camera integration for pattern overlay
-- [ ] **Spatial Anchoring**: Persistent AR patterns in specific locations
-- [ ] **Collaborative AR**: Shared AR experiences for community events
-- [ ] **AR Meditation**: Guided meditation with sacred geometry overlays
-
-### 4.3 AI-Powered Features
-- [ ] **Dynamic Quest Generation**: AI-created personalized challenges
-- [ ] **Smart Matching**: AI-powered mentor-student pairing
-- [ ] **Pattern Recognition**: AI analysis of user-created geometry
-- [ ] **Personalized Learning**: Adaptive learning paths based on progress
-- [ ] **Content Curation**: AI-assisted community content discovery
-
-**🎯 Deliverables**: Immersive AR experiences, AI-enhanced platform, advanced pattern creation tools
+- CI workflows (unit + lint; optional E2E)
+  - Add GitHub Actions to run backend unit tests (mvn -q -DskipITs=false test) and frontend unit tests (Vitest) on PRs
+  - Optional: gated Playwright E2E via manual dispatch or label to keep PRs fast
+  - Acceptance: PRs show green checks for backend and frontend unit tests; optional E2E job runnable on demand
 
 ---
 
-## 🌍 **Phase 5: Global Expansion & Scaling**
-*May - December 2026 (8 months)*  
-- [ ] **Community Integration**: Gemeinschafts-basierte Aktivitäten
-
-**🎯 Deliverables**: Native mobile apps, community platform, advanced learning system
-
----
-
-## 🌟 **Phase 3: Advanced Platform Features**
-*February - May 2026 (4 months)*
-
-### 3.1 AI & Machine Learning
-- [ ] **Personalized Learning**: AI-driven quest recommendations
-- [ ] **Pattern Recognition**: AI analysis of user-created geometry
-- [ ] **Smart Matching**: Connect users with similar interests
-- [ ] **Predictive Analytics**: User progression forecasting
-- [ ] **Content Generation**: AI-assisted quest and content creation
-- [ ] **Natural Language Processing**: Multilingual chat translation
-
-### 3.2 Advanced Integrations
-- [ ] **Blockchain Integration**: NFT achievements, decentralized identity
-- [ ] **IoT Devices**: Integration with meditation devices, biofeedback
-- [ ] **VR Support**: Virtual reality sacred geometry experiences
-- [ ] **API Ecosystem**: Third-party developer APIs
-- [ ] **Educational Partnerships**: University course integration
-- [ ] **Corporate Solutions**: Team building, consciousness training
-
-### 3.3 Advanced Analytics
-- [ ] **Learning Analytics**: Deep insights into user progression
-- [ ] **Community Metrics**: Social network analysis
-- [ ] **Pattern Analytics**: Sacred geometry usage patterns
-- [ ] **Engagement Optimization**: A/B testing framework
-- [ ] **Predictive Modeling**: Churn prediction, engagement forecasting
-- [ ] **Real-time Dashboards**: Admin and user analytics
-
-### 3.4 Monetization & Sustainability
-- [ ] **Premium Subscriptions**: Advanced features, exclusive content
-- [ ] **Corporate Licensing**: Enterprise solutions
-- [ ] **Educational Licenses**: School and university partnerships
-- [ ] **Marketplace**: User-generated content sales
-- [ ] **Certification Programs**: Paid professional development
-- [ ] **Sponsorship Platform**: Ethical brand partnerships
-
-**🎯 Deliverables**: AI-powered platform, enterprise solutions, sustainable business model
+## Recent Validation (smoke tests)
+- Auth: register/login/me ✅; JWT persisted for reuse
+- Onboarding: `POST /api/onboarding/accept` ✅ creates active onboarding `userQuest`; `GET /api/user-quests/active` shows it
+- Community: feed/users/projects/stats/leaderboard ✅
+  - Created project via `POST /api/community/projects` ✅ and listed in projects
+  - Leaderboard empty for fresh data (expected); feed empty initially (expected)
+  - Connection request POST attempted; UI flow validation planned next
 
 ---
 
-## 🌍 **Phase 4: Global Expansion & Advanced Features**
-*May - December 2026 (8 months)*
+- GitHub Quest Verification (NEXT)
+  - Add backend verification logic for GITHUB_ISSUE quests (issue closed / PR merged + author check)
+  - Add verify button in UI for applicable quests (optimistic -> USER_VERIFIED, rollback on failure)
+  - Optional: Introduce lightweight polling or manual refresh button for GitHub status
 
-### 5.1 Global Localization
-- [ ] **10+ Languages**: European, Asian, and indigenous languages
-- [ ] **Cultural Adaptation**: Respect for diverse spiritual traditions
-- [ ] **Local Communities**: Region-specific content and mentors
-- [ ] **Cultural Sensitivity**: Diverse sacred geometry traditions
-- [ ] **Accessibility**: Full WCAG 2.1 AAA compliance
-- [ ] **Global Partnerships**: International spiritual and educational organizations
+## Milestones and Deliverables
 
-### 5.2 Advanced Platform Architecture
-- [ ] **Microservices**: Scalable distributed architecture
-- [ ] **Global CDN**: Optimized content delivery worldwide
-- [ ] **Advanced Security**: Zero-trust architecture, encryption
-- [ ] **Performance Scaling**: Handle millions of users
-- [ ] **Data Privacy**: GDPR, CCPA full compliance
-- [ ] **Disaster Recovery**: Multi-region backup and failover
+Milestone A — Community Data Live (end of Week 2) - ✅ **COMPLETED**
+- ✅ Community feed/connections/projects/leaderboard backed by ArangoDB with real AQL queries
+- ✅ Backend DTOs implemented for type-safe API contracts
+- ✅ All service methods use real persistence instead of mocks
+- Next: Frontend service alignment and integration testing
 
-### 5.3 Research & Development
-- [ ] **Consciousness Research**: Academic partnerships
-- [ ] **Sacred Geometry Studies**: Mathematical research collaboration
-- [ ] **User Behavior Research**: Psychology and learning studies
-- [ ] **Technology Innovation**: Cutting-edge visualization techniques
-- [ ] **Open Source Contributions**: Platform components as open source
-- [ ] **White Papers**: Publish research findings
+Milestone B — Profile Insights Real (end of Week 2) — PARTIAL (backend endpoints present; queries pending)
+- Achievements/social from graph queries
+- Profile editing persists bio/social links
 
-**🎯 Deliverables**: Global platform, research partnerships, academic recognition
+Milestone C — Onboarding Generator + Quest Lists (end of Week 4)
+Milestone D — Connections UX Polish (added)
+- Criteria: Feed event reflection, error toasts with retries, connection direction fields explicit, pagination edge tests (frontend/backend), live update mechanism (polling or SSE v1)
+Milestone E — GitHub Integration Foundation (added)
+- Criteria: OAuth login flow live; user linking persisted; basic GITHUB_ISSUE quest acceptance & manual verification path defined
+Milestone F — GitHub Quest Verification (added)
+- Criteria: Verification endpoint validates issue/PR via GitHub API; UI verify button; XP award & feed event
+- Generator implemented and seeded
+- Quest endpoints for active/completed lists finalized (backend endpoints present; generator pending)
 
 ---
 
-## 🔮 **Phase 6: Future Vision & Innovation**
-*2027 and Beyond*
+## Technical Tasks (backlog)
 
-### 5.1 Emerging Technologies
-- [ ] **Quantum Computing**: Quantum-inspired consciousness algorithms
-- [ ] **Brain-Computer Interfaces**: Direct neural interaction
-- [ ] **Holographic Displays**: 3D sacred geometry projections
-- [ ] **Collective Intelligence**: Swarm consciousness experiments
-- [ ] **Biorhythm Integration**: Circadian and cosmic rhythm alignment
-- [ ] **Space Applications**: Sacred geometry for space exploration
+- Repositories/AQL - ✅ **MAJOR PROGRESS**
+  - ✅ Connection edges: query by direction/status, paginate, counts implemented
+  - ✅ Project membership edges: create/list contributors, by role implemented  
+  - ✅ Leaderboard aggregations: XP, quests completed; weekly/monthly windows implemented
+  - ✅ Feed aggregation: union queries with real data from multiple sources
 
-### 5.2 Consciousness Evolution
-- [ ] **Global Meditation Network**: Synchronized worldwide meditations
-- [ ] **Collective Problem Solving**: Harness group consciousness
-- [ ] **Consciousness Metrics**: Measure collective awareness levels
-- [ ] **Evolutionary Tracking**: Monitor human consciousness development
-- [ ] **Galactic Connection**: Explore cosmic consciousness patterns
-- [ ] **Unified Field Theory**: Practical applications of consciousness research
+- Frontend quality
+  - Replace remaining direct `api.*` calls with services (audit leftover views)
+  - Add types for community DTOs; remove any `any` usage in views (CommunityView feed mapping still uses `any`)
+  - Small UI polish for loading/empty/error states
+  - Add accessibility: ARIA roles for connections lists & live region for pagination updates
+  - Add OAuth callback page & token handling util
 
----
+- GitHub Integration
+  - Add `spring-boot-starter-oauth2-client` dependency
+  - SecurityConfig: allow `/oauth2/**`, enable `oauth2Login()` with success/failure handlers
+  - Success handler: map attributes (id, login, name, avatar_url, email) → user; generate JWT & redirect
+  - Frontend: `/oauth/callback` route + store method to finalize login
+  - Config: `app.frontend.base-url` now reads `${FRONTEND_BASE_URL}` env override for prod domains
+  - Hardening (planned): Add OAuth `state` (nonce) generation & validation in session or short-lived store to mitigate CSRF; future PR
+  - Future: GitHub issue/PR polling or webhooks for quest verification
 
-## 📊 **Technical Architecture Evolution**
-
-### **Current Stack**
-```
-Frontend: Vue.js 3 + TypeScript + Vite + Pinia
-Backend: Spring Boot 3 + Java 21
-Database: ArangoDB (TAO architecture)
-Containerization: Docker + Kubernetes
-```
-
-### **Phase 1-2 Additions**
-```
-i18n: Vue I18n + ICU message format
-PWA: Workbox + Web App Manifest
-Mobile: Capacitor.js + Native plugins
-Real-time: WebSocket + Server-Sent Events
-```
-
-### **Phase 3-4 Scaling**
-```
-AI/ML: TensorFlow.js + Python ML backend
-Blockchain: Web3.js + Smart contracts
-Analytics: ClickHouse + Apache Kafka
-Search: Elasticsearch + Vector search
-```
-
-### **Phase 5 Innovation**
-```
-Quantum: Qiskit integration
-BCI: OpenBCI + signal processing
-AR/VR: WebXR + Three.js + A-Frame
-IoT: MQTT + Edge computing
-```
+- Infra/ops
+  - Ensure avatar upload path exists and is configurable; add cleanup policy
+  - Expand docker-compose for local Arango volume persistence
 
 ---
 
-## 🎨 **Moderne Design-Prinzipien**
-
-### **Harmonische Proportionen**
-- **Layout Proportionen**: 1:1.618 (Goldener Schnitt) in allen wichtigen Bereichen
-- **Spacing System**: 8, 13, 21, 34, 55, 89px Progression (Fibonacci)
-- **Typography**: Schriftgrößen-Verhältnisse nach harmonischen Prinzipien
-- **Animation Timing**: Dauernd-Verhältnisse basierend auf natürlichen Proportionen
-
-### **Community-Orientierte Muster**
-- **Navigation**: Hexagonale Menüstrukturen (für Verbindung)
-- **Grid Systems**: Organische und geometrische Gitter
-- **Color Harmony**: Frequenz-basierte Farbbeziehungen
-- **Data Visualization**: Spiralförmige und zirkuläre Informationsdarstellung
-- **User Flow**: Pfade die natürliche Bewegungsmuster folgen
-
-### **Consciousness-Centered UX**
-- **Mindful Interactions**: Deliberate, purposeful interface elements
-- **Breathing Space**: Adequate white space for mental clarity
-- **Natural Rhythms**: Interface timing matching natural patterns
-- **Intuitive Navigation**: Following archetypal symbol recognition
-- **Progressive Disclosure**: Information revealed in sacred sequences
+## Risks and Mitigations
+- Risk: Data model drift between frontend DTOs and backend models
+  - Mitigation: Centralize TS types per endpoint and align with controller schemas
+- Risk: Arango AQL complexity/performance
+  - Mitigation: Index review, EXPLAIN plans, paginate aggressively
+- Risk: Contract mismatches in community flows
+  - Mitigation: Update service contracts first; generate quick integration tests
+ - Risk: Local Arango connectivity ("No host has been set!") can break backend boot
+   - Mitigation: Provide defaults in `application.yml` via env (ARANGO_HOST/PORT/DB/USER/PASS) and prefer `docker-compose` for local
 
 ---
 
-## 📱 **Mobile-First & PWA Strategy**
-
-### **Progressive Enhancement Layers**
-1. **Core HTML/CSS**: Basic functionality without JavaScript
-2. **Enhanced Interactions**: JavaScript-powered features
-3. **Offline Capabilities**: Service Worker with intelligent caching
-4. **Native Features**: Device APIs through Capacitor
-5. **Advanced Features**: AR, sensors, push notifications
-
-### **Performance Targets**
-- **First Contentful Paint**: < 1.5s
-- **Largest Contentful Paint**: < 2.5s
-- **Time to Interactive**: < 3s
-- **Cumulative Layout Shift**: < 0.1
-- **Core Web Vitals**: All green metrics
-
-### **App Store Strategy**
-- **PWA First**: Web-based progressive web app
-- **Native Wrapper**: Capacitor.js for app store distribution
-- **Feature Parity**: Consistent experience across platforms
-- **Platform Optimization**: iOS and Android specific enhancements
+## Definition of Done (per feature)
+- API endpoints:
+  - Uses `ApiResponse` format
+  - Validates input; returns 4xx with helpful messages
+  - Unit or slice tests for service logic where feasible
+- Frontend flows:
+  - Only service layer used for HTTP
+  - Loading/empty/error states present
+  - Types accurate; no `any` in new code
 
 ---
 
-## 🌐 **Internationalization Strategy**
+## Sequenced Work Plan (refreshed)
 
-### **Language Priorities**
-1. **Phase 1**: English, German
-2. **Phase 2**: Spanish, French, Italian, Portuguese
-3. **Phase 3**: Mandarin, Japanese, Hindi, Arabic
-4. **Phase 4**: 20+ additional languages
+1. ✅ ~~Align community service contracts (frontend + backend) and remove direct calls~~ **COMPLETED**
+2. ✅ ~~Implement community AQL + repositories; wire real data for feed/connections/projects/leaderboard~~ **COMPLETED**
+3. ✅ ~~Align frontend `community.service.ts` with new backend DTOs and test integration~~ **COMPLETED**
+4. ✅ Quest user endpoints refactor: DTO + pagination + verification (backend)
+5. Community connections feed integration & direction fields + pagination edge tests
+6. Minimal GitHub OAuth enablement (branch: feature/github-oauth)
+7. Quests frontend adoption of DTO/pagination + verification UI & tests
+8. GitHub quest verification backend & UI (issue/PR status checks)
+9. Profile achievements/social: implement TAO queries; finish profile save handling
+10. OnboardingQuestGenerator implementation + seeding path
+11. Sweep for ApiResponse consistency across remaining controllers; add minimal tests/docs
+12. CI workflows for backend/frontend unit tests (optional E2E) to protect PRs
+13. Live update mechanism (polling → potential SSE) for connections/feed
 
-### **Cultural Adaptation**
-- **Sacred Traditions**: Respect for diverse spiritual paths
-- **Color Symbolism**: Culture-appropriate color meanings
-- **Number Systems**: Local mathematical traditions
-- **Geometry Patterns**: Include cultural sacred symbols
-- **Community Guidelines**: Culturally sensitive moderation
-
----
-
-## 🔄 **Development Methodology**
-
-### **Agile Approach**
-- **2-week Sprints**: Regular iteration and feedback
-- **Sacred Principles**: Development practices aligned with consciousness
-- **User-Centered**: Continuous user feedback integration
-- **Mindful Development**: Ethical coding practices
-- **Sustainable Pace**: Developer well-being prioritized
-
-### **Quality Assurance**
-- **Test-Driven Development**: Comprehensive test coverage
-- **Accessibility Testing**: Regular WCAG compliance checks
-- **Performance Monitoring**: Continuous optimization
-- **Security Audits**: Regular penetration testing
-- **User Testing**: Ongoing usability studies
+### Recent Additions Summary
+- Connections: optimistic lifecycle store, pagination & filtering UI, integration + rollback tests
+- Toast notification system (global) replacing alert usage in Community & Profile views
+- Component test for connections accept + decline rollback; store tests expanded
+- Styling: connections filters bar with responsive layout
+  
+### Newly Planned (GitHub Integration)
+- OAuth flow & success handler
+- Quest verification integration with GitHub issues/PRs
+- Frontend callback + token ingestion
+- Future webhooks for push-based quest status updates
 
 ---
 
-## 🎯 **Success Metrics**
+## Appendix
+- Key files to touch next
+  - Backend: `CommunityService`, `CommunityController`, `UserQuestController`, `ProfileService`, repositories for collaborations/projects
+  - Frontend: `frontend/src/views/CommunityView.vue` (connections actions/UX), `frontend/src/services/quest.service.ts` (progress/complete), `frontend/src/services/profile.service.ts`, `frontend/src/views/ProfileView.vue`
 
-### **User Engagement**
-- Daily/Monthly Active Users
-- Session Duration and Frequency
-- Quest Completion Rates
-- Community Participation
-- Mobile App Store Ratings
-
-### **Learning Outcomes**
-- Skill Progression Tracking
-- Knowledge Retention Rates
-- Real-world Application
-- Career Impact Measurement
-- Consciousness Development Indicators
-
-### **Technical Performance**
-- Core Web Vitals Scores
-- Mobile Performance Metrics
-- Accessibility Compliance
-- Security Incident Response
-- Platform Scalability Metrics
-
-### **Business Impact**
-- User Acquisition Cost
-- Lifetime Value
-- Churn Rate
-- Revenue Growth
-- Community Growth
-
----
-
-*"Gemeinsam erschaffen wir eine Welt, in der Technologie die Menschheit verbindet und durch kollaboratives Handeln positive Veränderung bewirkt - ein digitaler Kosmos für eine bessere Zukunft."*
-
----
-
-**Document Version**: 1.0  
-**Created**: August 2025  
-**Next Review**: September 2025  
-**Maintainer**: Syntopia Development Team
+- Review cadence
+  - Weekly checkpoint: demo feed/connections/projects working from DB
+  - Biweekly: profile achievements/social + onboarding generator status

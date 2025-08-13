@@ -85,8 +85,8 @@ const handleRegister = async () => {
     await userStore.register({
       username: username.value,
       email: email.value,
-      password: password.value,
-      displayName: displayName.value
+      displayName: displayName.value,
+      password: password.value
     })
     router.push('/onboarding')
   } catch (error) {

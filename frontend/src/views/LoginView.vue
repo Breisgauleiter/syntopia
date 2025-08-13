@@ -57,8 +57,15 @@ const password = ref('')
 const handleLogin = async () => {
   try {
     // Send email in the email field, not as username
-    await userStore.login({ email: email.value, password: password.value })
-    router.push('/')
+    const success = await userStore.login({ email: email.value, password: password.value })
+    if (success) {
+      console.log('✅ Login successful, navigating to home page...')
+      // Give a small delay to ensure auth data is fully set
+      await new Promise(resolve => setTimeout(resolve, 100))
+      router.push('/')
+    } else {
+      console.error('❌ Login failed - not navigating')
+    }
   } catch (error) {
     console.error('Login failed:', error)
   }

@@ -2,6 +2,7 @@ package com.syntopia;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 /**
@@ -11,7 +12,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
  * This backend service provides authentication, data management, and API endpoints
  * for the frontend Vue.js application.
  */
-@SpringBootApplication
+@SpringBootApplication(exclude = {UserDetailsServiceAutoConfiguration.class})
 @EnableConfigurationProperties
 public class SyntopiaApplication {
 
