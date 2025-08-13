@@ -26,7 +26,7 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
     private final UserService userService;
     private final JwtTokenUtil jwtTokenUtil;
 
-    @Value("${app.frontend.base-url:http://localhost:5173}")
+    @Value("${app.frontend.base-url:${FRONTEND_BASE_URL:http://localhost:5173}}")
     private String frontendBaseUrl;
 
     public OAuth2LoginSuccessHandler(UserRepository userRepository, UserService userService, JwtTokenUtil jwtTokenUtil) {
