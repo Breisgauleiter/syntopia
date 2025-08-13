@@ -38,6 +38,21 @@
           <button class="btn btn-secondary" @click="uploadAvatar">
             <i class="fas fa-camera"></i> Change Avatar
           </button>
+          <button 
+            v-if="canShowGitHubButton" 
+            class="btn btn-accent" 
+            @click="connectGitHub"
+          >
+            <i class="fab fa-github"></i> Connect GitHub
+          </button>
+          <button 
+            v-else-if="profile?.isGitHubIntegrated" 
+            disabled 
+            class="btn btn-success btn-ghost"
+            title="GitHub already connected"
+          >
+            <i class="fab fa-github"></i> GitHub Linked
+          </button>
         </div>
       </div>
 
@@ -271,6 +286,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useToastStore } from '@/stores/toast'
+import { useUserStore } from '@/stores/user'
 import api from '../services/api'
 import profileService from '../services/profile.service'
 import type { User } from '../types/api.types'
@@ -311,6 +327,7 @@ const selectedFile = ref<File | null>(null)
 const uploading = ref(false)
 const saving = ref(false)
 const toast = useToastStore()
+const userStore = useUserStore()
 
 const tabs = [
   { id: 'overview', label: 'Overview', icon: 'fas fa-user' },
@@ -374,6 +391,21 @@ const loadProfile = async () => {
     error.value = 'Failed to load profile'
   } finally {
     loading.value = false
+  }
+}
+
+const canShowGitHubButton = computed(() => {
+  const lvlOk = (profile.value?.currentLevel || 0) >= 4
+  const notIntegrated = !profile.value?.isGitHubIntegrated && !userStore.user?.isGitHubIntegrated
+  return lvlOk && notIntegrated
+})
+
+const connectGitHub = () => {
+  try {
+    toast.push('Redirecting to GitHub...', 'info')
+    window.location.href = '/oauth2/authorization/github'
+  } catch (e) {
+    toast.push('Failed to start GitHub OAuth', 'error')
   }
 }
 

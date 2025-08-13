@@ -13,6 +13,12 @@ const router = createRouter({
       meta: { requiresAuth: false }
     },
     {
+      path: '/oauth/callback',
+      name: 'oauth-callback',
+      component: () => import('../views/OAuthCallbackView.vue'),
+      meta: { requiresAuth: false, hideWhenAuthenticated: false }
+    },
+    {
       path: '/geometry',
       name: 'geometry',
       component: () => import('../views/GeometryView.vue'),
